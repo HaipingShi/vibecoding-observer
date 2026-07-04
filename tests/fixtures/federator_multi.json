@@ -1,0 +1,34 @@
+[
+  {
+    "ts": "2026-06-28T13:00:00Z",
+    "source_agent": "claude",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "user",
+    "text": "claude first"
+  },
+  {
+    "ts": "2026-06-28T13:05:00Z",
+    "source_agent": "claude",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "assistant",
+    "text": "claude reply"
+  },
+  {
+    "ts": "2026-06-28T14:00:00Z",
+    "source_agent": "codex",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "user",
+    "text": "codex resumes (handoff)"
+  },
+  {
+    "ts": "2026-06-28T14:10:00Z",
+    "source_agent": "codex",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "assistant",
+    "text": "codex reply"
+  }
+]

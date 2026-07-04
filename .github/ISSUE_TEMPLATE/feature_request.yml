@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a bounded improvement to adapters, labels, reports, docs, or publishing.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Adapter support
+        - Diagnostic labels / taxonomy
+        - Report readability
+        - .analysis-profile.json contract
+        - Consulting routes
+        - Documentation
+        - Packaging or release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or diagnostic gap does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful change.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Boundaries
+      description: What should this feature avoid doing?
+      placeholder: "No runtime LLM calls, no uploads, no ranking, no heavy runtime dependency."
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation idea
+      description: How could this be tested or falsified?

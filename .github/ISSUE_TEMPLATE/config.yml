@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security or privacy-sensitive report
+    url: https://github.com/HaipingShi/vibecoding-observer/security/advisories/new
+    about: Report private vulnerabilities or sensitive data exposure privately.
+  - name: Security model
+    url: https://github.com/HaipingShi/vibecoding-observer/blob/main/SECURITY.md
+    about: Read what the tool scans locally, what it writes, and what is in scope.

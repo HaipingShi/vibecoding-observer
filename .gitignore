@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# VibeCoding Observer outputs (local, never commit)
+.analysis-profile.json
+report.md
+report.html
+report_*.md
+*.analysis-profile.json
+reports/*.html
+.publish_private_patterns
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp

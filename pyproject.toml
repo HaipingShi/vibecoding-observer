@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vibecoding-observer"
+version = "0.1.0"
+description = "A local-first observer for vibe-coding history — diagnose AI coding collaboration friction and turn it into actionable consulting routes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Haiping Shi" }]
+keywords = [
+    "vibe-coding",
+    "ai-coding",
+    "llm",
+    "diagnostics",
+    "developer-tools",
+    "coding-agents",
+    "claude-code",
+    "codex",
+    "local-first",
+    "session-analysis",
+    "agent-observability",
+    "engineering-fast-lane",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+# 唯一运行时依赖原则：MVP 阶段无运行时依赖。
+# LLM 调用接口在 T-009 定义（typing.Protocol），不绑死 provider。
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6",
+    "pyright>=1.1",
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+
+[project.scripts]
+vibecoding-observer = "observer.cli:main"
+agentlens = "observer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/HaipingShi/vibecoding-observer"
+Repository = "https://github.com/HaipingShi/vibecoding-observer"
+Issues = "https://github.com/HaipingShi/vibecoding-observer/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/observer", "src/agentlens"]
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# RUF001/002/003: project intentionally processes CJK text (fullwidth punctuation is meaningful).
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
