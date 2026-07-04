@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-07-04T10:00:00Z","uuid":"u-missing","parentUuid":null,"message":{"role":"user","content":"claude missing cwd should be excluded"}}
+{"type":"user","cwd":"/tmp/vibecoding-observer-scope/target","timestamp":"2026-07-04T10:00:01Z","uuid":"u-target","parentUuid":null,"message":{"role":"user","content":"claude target root"}}
+{"type":"assistant","cwd":"/tmp/vibecoding-observer-scope/target/subdir","timestamp":"2026-07-04T10:00:02Z","uuid":"a-child","parentUuid":"u-target","message":{"role":"assistant","content":[{"type":"text","text":"claude target child"}]}}
+{"type":"user","cwd":"/tmp/vibecoding-observer-scope/other","timestamp":"2026-07-04T10:00:03Z","uuid":"u-other","parentUuid":"a-child","message":{"role":"user","content":"claude other project should be excluded"}}

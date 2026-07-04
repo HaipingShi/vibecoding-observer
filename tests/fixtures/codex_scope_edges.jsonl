@@ -1,0 +1,7 @@
+{"timestamp":"2026-07-04T10:01:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"codex missing cwd should be excluded"}]}}
+{"timestamp":"2026-07-04T10:01:01Z","type":"turn_context","payload":{"turn_id":"t-root","cwd":"/tmp/vibecoding-observer-scope/target"}}
+{"timestamp":"2026-07-04T10:01:02Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"codex target root"}]}}
+{"timestamp":"2026-07-04T10:01:03Z","type":"turn_context","payload":{"turn_id":"t-child","cwd":"/tmp/vibecoding-observer-scope/target/subdir"}}
+{"timestamp":"2026-07-04T10:01:04Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"codex target child"}]}}
+{"timestamp":"2026-07-04T10:01:05Z","type":"turn_context","payload":{"turn_id":"t-other","cwd":"/tmp/vibecoding-observer-scope/other"}}
+{"timestamp":"2026-07-04T10:01:06Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"codex other project should be excluded"}]}}

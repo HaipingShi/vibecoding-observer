@@ -1,0 +1,18 @@
+[
+  {
+    "ts": "2026-06-28T13:00:00Z",
+    "source_agent": "claude",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "user",
+    "text": "claude start"
+  },
+  {
+    "ts": "2026-06-29T20:00:00Z",
+    "source_agent": "codex",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "user",
+    "text": "codex next day (NOT handoff, gap too large)"
+  }
+]

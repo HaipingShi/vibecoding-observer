@@ -1,0 +1,12 @@
+{"timestamp":"2026-05-15T12:48:59.541Z","type":"session_meta","payload":{"id":"s1","cwd":"/Users/example/projects/example","originator":"Codex Desktop","cli_version":"0.131.0"}}
+{"timestamp":"2026-05-15T12:48:59.543Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}
+{"timestamp":"2026-05-15T12:48:59.543Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions instructions>\nSandboxing rules here."}]}}
+{"timestamp":"2026-05-15T12:48:59.543Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/Users/example/projects/example</cwd>\n</environment_context>"}]}}
+{"timestamp":"2026-05-15T12:49:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"分析这个项目的依赖结构"}]}}
+{"timestamp":"2026-05-15T12:49:01.000Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/Users/example/projects/example"}}
+{"timestamp":"2026-05-15T12:49:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null,"encrypted_content":"gAAAAAB"}}
+{"timestamp":"2026-05-15T12:49:03.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"我先看看目录结构。"}]}}
+{"timestamp":"2026-05-15T12:49:04.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"ls -la\",\"workdir\":\"/Users/example/projects/example\"}","call_id":"call_01"}}
+{"timestamp":"2026-05-15T12:49:05.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_01","output":"Chunk ID: 1\nWall time: 0.0001 seconds\nProcess exited with code 0\nOriginal token count: 5\nOutput:\nREADME.md\nsrc\ntests"}}
+{"timestamp":"2026-05-15T12:49:10.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"pytest\",\"workdir\":\"/Users/example/projects/example\"}","call_id":"call_02"}}
+{"timestamp":"2026-05-15T12:49:12.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_02","output":"Process exited with code 1\nOutput:\n2 failed"}}

@@ -1,0 +1,79 @@
+name: Bug report
+description: Report an installation, parsing, CLI, report, or packaging problem.
+title: "[Bug]: "
+labels: ["bug", "needs:repro"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not paste private session logs, full local paths, tokens, emails, or private project code. Redacted excerpts are enough.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part seems affected?
+      options:
+        - Installation or packaging
+        - CLI
+        - Claude Code adapter
+        - Codex adapter
+        - Diagnostic labels / taxonomy
+        - HTML or Markdown report
+        - .analysis-profile.json contract
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Use `vibecoding-observer --version`, a release tag, or a commit SHA.
+      placeholder: "vibecoding-observer 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and installation method.
+      placeholder: "macOS 15, Python 3.12, uv sync --extra dev"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran, with private paths replaced by placeholders.
+      render: shell
+      placeholder: "vibecoding-observer --current-project --source all --output /tmp/vibecoding_observer_report"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include a redacted traceback or output excerpt if available.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: minimal_repro
+    attributes:
+      label: Minimal redacted reproduction
+      description: Provide the smallest redacted fixture, event shape, or steps that reproduce the problem.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed private session logs, secrets, full local paths, and private project code.
+          required: true

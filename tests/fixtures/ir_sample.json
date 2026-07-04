@@ -1,0 +1,62 @@
+[
+  {
+    "ts": "2026-06-28T13:00:00Z",
+    "source_agent": "claude",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "user",
+    "text": "实现一个 Adapter，先读取配置再做健康检查",
+    "tool_calls": [],
+    "parent": null,
+    "children": ["ev-002"],
+    "is_handoff": false
+  },
+  {
+    "ts": "2026-06-28T13:00:05Z",
+    "source_agent": "claude",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "assistant",
+    "text": "好的，我先读取配置文件。",
+    "tool_calls": [
+      {
+        "name": "Read",
+        "input": {"file_path": "/Users/example/projects/example/config.toml"},
+        "result_ok": true
+      }
+    ],
+    "parent": "ev-001",
+    "children": ["ev-003"],
+    "is_handoff": false
+  },
+  {
+    "ts": "2026-06-28T13:01:00Z",
+    "source_agent": "claude",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "assistant",
+    "text": "完成了。",
+    "tool_calls": [
+      {
+        "name": "Bash",
+        "input": {"command": "pytest"},
+        "result_ok": false
+      }
+    ],
+    "parent": "ev-002",
+    "children": [],
+    "is_handoff": false
+  },
+  {
+    "ts": "2026-06-28T14:30:00Z",
+    "source_agent": "codex",
+    "cwd": "/Users/example/projects/example",
+    "project": "example",
+    "role": "user",
+    "text": "换我来接着改这个项目",
+    "tool_calls": [],
+    "parent": null,
+    "children": [],
+    "is_handoff": true
+  }
+]
