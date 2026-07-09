@@ -39,6 +39,15 @@ def test_profile_contract_links_to_consulting_output_examples() -> None:
     assert "CONSULTING_OUTPUT_EXAMPLES.md" in text
 
 
+def test_profile_contract_documents_share_card_boundary() -> None:
+    text = (ROOT / "docs" / "PROFILE_CONTRACT.md").read_text()
+
+    assert "`share_card`" in text
+    assert "optional `share-card.svg` export" in text
+    assert "playful user-delivery wrapper" in text
+    assert "Keep exaggeration playful" in text
+
+
 def test_release_governance_documents_publication_boundaries() -> None:
     release = (ROOT / "docs" / "RELEASE_CHECKLIST.md").read_text()
     agents = (ROOT / "AGENTS.md").read_text()

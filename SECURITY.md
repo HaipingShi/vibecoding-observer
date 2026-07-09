@@ -36,6 +36,8 @@ The tool writes:
 - `report.html`
 - `report.md`
 - `.analysis-profile.json`
+- `share-card.svg` when explicitly requested with `--export-share-card` or
+  `--share-card-svg`
 
 These outputs may include private interaction fragments. Treat them as local
 artifacts unless you intentionally share them.

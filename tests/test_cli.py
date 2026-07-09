@@ -11,10 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from observer.cli import _resolve_project_path, build_parser
+from observer.cli import _resolve_project_path, _resolve_share_card_svg_path, build_parser
 from observer.cli import main as cli_main
 from observer.ir import IREvent, ToolCall
-from observer.orchestrator import DiscoveryResult, Orchestrator, discover_sessions
+from observer.orchestrator import (
+    DiscoveryResult,
+    Orchestrator,
+    _resolve_report_language,
+    discover_sessions,
+)
 
 
 class TestOrchestrator:
@@ -37,6 +42,53 @@ class TestOrchestrator:
         assert "consulting_routes" in html
         profile = json.loads((tmp_path / ".analysis-profile.json").read_text())
         assert profile["version"] == "0.1.0"
+
+    def test_run_writes_share_card_svg(self, tmp_path: Path) -> None:
+        share_card = tmp_path / "share-card.svg"
+        orch = Orchestrator(
+            source="claude",
+            output_dir=tmp_path,
+            share_card_svg_path=share_card,
+        )
+        orch._collect_events = lambda: []  # type: ignore[method-assign]
+
+        result = orch.run()
+
+        assert share_card.exists()
+        assert result.share_card_svg_path == str(share_card)
+        assert result.share_card_svg is not None
+        svg = share_card.read_text()
+        assert svg.startswith("<svg ")
+        assert "VibeCoding Observer 夸夸卡" in svg
+        assert "本次高光指数" in svg
+
+    def test_run_auto_detects_chinese_report_language(self) -> None:
+        orch = Orchestrator(source="claude")
+        orch._collect_events = lambda: [  # type: ignore[method-assign]
+            IREvent(
+                ts="2026-06-28T13:00:00Z",
+                source_agent="claude",
+                cwd="/p/example",
+                project="example",
+                role="user",
+                text="请帮我分析这个项目的架构边界，并生成中文报告。",
+            )
+        ]
+
+        result = orch.run()
+
+        assert result.profile["report_language"] == "zh"
+        assert result.profile["language_detection"]["source"] == "auto"
+
+    def test_run_can_force_english_report_language(self) -> None:
+        orch = Orchestrator(source="claude", report_language="en")
+        orch._collect_events = lambda: []  # type: ignore[method-assign]
+
+        result = orch.run()
+
+        assert result.profile["report_language"] == "en"
+        assert result.profile["language_detection"]["source"] == "cli"
+        assert '<html lang="en">' in result.report_html
 
     def test_report_md_has_sections(self) -> None:
         orch = Orchestrator(source="claude")
@@ -248,6 +300,65 @@ class TestCLI:
         args = build_parser().parse_args(["--all-history"])
         assert args.all_history is True
 
+    def test_parser_report_language(self) -> None:
+        args = build_parser().parse_args(["--report-language", "en"])
+        assert args.report_language == "en"
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--report-language", "fr"])
+
+    def test_parser_share_card_flags(self) -> None:
+        args = build_parser().parse_args(["--export-share-card"])
+        assert args.export_share_card is True
+        assert args.share_card_svg is None
+
+        args = build_parser().parse_args(["--share-card-svg", "/tmp/card.svg"])
+        assert args.export_share_card is False
+        assert args.share_card_svg == "/tmp/card.svg"
+
+        args = build_parser().parse_args(["--share-card-svg"])
+        assert args.share_card_svg == ""
+
+    def test_parser_share_card_flags_are_exclusive(self) -> None:
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--export-share-card", "--share-card-svg"])
+
+    def test_share_card_svg_path_defaults_to_output(self, tmp_path: Path) -> None:
+        args = build_parser().parse_args([
+            "--output",
+            str(tmp_path),
+            "--export-share-card",
+        ])
+
+        assert _resolve_share_card_svg_path(args) == tmp_path / "share-card.svg"
+
+    def test_share_card_svg_path_can_be_explicit(self, tmp_path: Path) -> None:
+        target = tmp_path / "custom.svg"
+        args = build_parser().parse_args(["--share-card-svg", str(target)])
+
+        assert _resolve_share_card_svg_path(args) == target
+
+    def test_auto_language_detection_prefers_english_for_english_sessions(self) -> None:
+        language, meta = _resolve_report_language(
+            "auto",
+            [
+                IREvent(
+                    ts="2026-06-28T13:00:00Z",
+                    source_agent="codex",
+                    cwd="/p/example",
+                    project="example",
+                    role="user",
+                    text=(
+                        "Please inspect this repository, summarize the implementation "
+                        "boundary, and generate an English report for the developer."
+                    ),
+                )
+            ],
+        )
+
+        assert language == "en"
+        assert meta["source"] == "auto"
+
     def test_parser_scope_options_are_exclusive(self) -> None:
         with pytest.raises(SystemExit):
             build_parser().parse_args(["--current-project", "--all-history"])
@@ -295,6 +406,28 @@ class TestCLI:
         assert code == 0
         assert (tmp_path / "report.md").exists()
         assert (tmp_path / "report.html").exists()
+
+    def test_cli_export_share_card(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "observer.orchestrator.discover_sessions",
+            lambda *a, **kw: type("R", (), {
+                "claude_paths": [], "codex_paths": [],
+                "claude_dir_checked": "", "codex_dirs_checked": [],
+                "total": 0, "is_empty": True,
+            })(),
+        )
+        code = cli_main([
+            "--source",
+            "claude",
+            "--output",
+            str(tmp_path),
+            "--export-share-card",
+        ])
+
+        assert code == 0
+        assert (tmp_path / "share-card.svg").exists()
 
     def test_cli_prints_report(
         self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch

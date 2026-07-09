@@ -16,6 +16,7 @@ import contextlib
 import glob
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +32,12 @@ from observer.extractor import LabeledEvent
 from observer.extractor import extract as extract_labels
 from observer.federator import FederatedProject, federate
 from observer.ir import IREvent
-from observer.reporter import generate_html_report, generate_profile, generate_report
+from observer.reporter import (
+    generate_html_report,
+    generate_profile,
+    generate_report,
+    generate_share_card_svg,
+)
 from observer.signal_config import SignalConfig, load_signal_config
 
 __all__ = ["DiscoveryResult", "OrchestrationResult", "Orchestrator", "discover_sessions"]
@@ -67,6 +73,8 @@ class OrchestrationResult:
 
     report_md: str
     report_html: str
+    share_card_svg: str | None
+    share_card_svg_path: str | None
     profile: dict
     federated_projects: list[FederatedProject]
     anomalies: list[Anomaly]
@@ -85,6 +93,10 @@ class Orchestrator:
         codex_dirs: Custom Codex session directories.
         project_path: Optional project path filter. When set, only events whose
             cwd is this path or a child directory are analyzed.
+        share_card_svg_path: Optional path for writing a standalone share-card
+            SVG. When set, this writes an extra local artifact.
+        report_language: "auto", "zh", or "en". Auto detects the developer's
+            dominant session language from local event text.
     """
 
     def __init__(
@@ -94,12 +106,18 @@ class Orchestrator:
         claude_dir: str | None = None,
         codex_dirs: list[str] | None = None,
         project_path: str | Path | None = None,
+        share_card_svg_path: str | Path | None = None,
+        report_language: str = "auto",
     ) -> None:
         self.source = source
         self.output_dir = Path(output_dir) if output_dir else None
         self.claude_dir = claude_dir or _DEFAULT_CLAUDE_DIR
         self.codex_dirs = codex_dirs or _DEFAULT_CODEX_DIRS
         self.project_path = _normalize_project_path(project_path) if project_path else None
+        self.share_card_svg_path = (
+            Path(share_card_svg_path).expanduser() if share_card_svg_path else None
+        )
+        self.report_language = report_language
         self._discovery: DiscoveryResult | None = None
 
     @property
@@ -113,6 +131,10 @@ class Orchestrator:
         from observer.project_scanner import scan_project
 
         events = list(self._collect_events())
+        report_language, language_detection = _resolve_report_language(
+            self.report_language,
+            events,
+        )
         projects = federate(events)
         signal_configs = {
             project.cwd: load_signal_config(project.cwd or None)
@@ -164,19 +186,29 @@ class Orchestrator:
             diagnoses=unique_diagnoses or None,
             project=proj_profile,
             git=git_metrics,
+            report_language=report_language,
         )
         profile = generate_profile(
             agg_report, anomalies,
             diagnoses=unique_diagnoses or None,
             episodes=episodes,
             signal_config=top_signal_config.to_dict() if top_signal_config else None,
+            report_language=report_language,
+            language_detection=language_detection,
         )
         report_html = generate_html_report(profile)
+        share_card_svg = None
+        written_share_card_path = None
+        if self.share_card_svg_path:
+            share_card_svg = generate_share_card_svg(profile)
+            written_share_card_path = self._write_share_card_svg(share_card_svg)
         if self.output_dir:
             self._write_outputs(report_md, report_html, profile)
         return OrchestrationResult(
             report_md=report_md,
             report_html=report_html,
+            share_card_svg=share_card_svg,
+            share_card_svg_path=str(written_share_card_path) if written_share_card_path else None,
             profile=profile,
             federated_projects=projects,
             anomalies=anomalies,
@@ -238,6 +270,15 @@ class Orchestrator:
             json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
+    def _write_share_card_svg(self, svg: str) -> Path:
+        assert self.share_card_svg_path is not None
+        path = self.share_card_svg_path
+        if path.exists() and path.is_dir():
+            path = path / "share-card.svg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(svg, encoding="utf-8")
+        return path
+
 
 def discover_sessions(
     source: str = "all",
@@ -289,3 +330,43 @@ def _event_in_project(event: IREvent, project_path: Path) -> bool:
         cwd = Path(event.cwd).expanduser().resolve()
         return cwd == project_path or project_path in cwd.parents
     return False
+
+
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]")
+
+
+def _resolve_report_language(
+    requested: str,
+    events: list[IREvent],
+) -> tuple[str, dict[str, object]]:
+    requested = requested.lower()
+    if requested in {"zh", "en"}:
+        return requested, {
+            "source": "cli",
+            "confidence": "high",
+            "requested": requested,
+        }
+    text = "\n".join(
+        event.text
+        for event in events
+        if event.text and event.role in {"user", "assistant"}
+    )
+    cjk = len(_CJK_RE.findall(text))
+    latin = len(_LATIN_WORD_RE.findall(text))
+    if cjk == 0 and latin == 0:
+        return "zh", {
+            "source": "auto",
+            "confidence": "low",
+            "cjk_chars": cjk,
+            "latin_chars": latin,
+            "reason": "no_language_signal",
+        }
+    language = "zh" if cjk >= 20 and cjk >= latin * 0.12 else "en"
+    confidence = "high" if max(cjk, latin) >= 80 else "medium"
+    return language, {
+        "source": "auto",
+        "confidence": confidence,
+        "cjk_chars": cjk,
+        "latin_chars": latin,
+    }

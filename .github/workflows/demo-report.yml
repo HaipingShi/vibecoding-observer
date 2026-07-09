@@ -70,6 +70,19 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Check GitHub Pages is enabled
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/tmp/pages.json 2>/tmp/pages.err; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=GitHub Pages is not enabled::Skipping Pages deploy. Enable Pages in Settings > Pages and select GitHub Actions, or run with publish_pages=false to only keep the artifact."
+          fi
+
       - name: Deploy demo report to GitHub Pages
+        if: ${{ steps.pages.outputs.enabled == 'true' }}
         id: deployment
         uses: actions/deploy-pages@v4

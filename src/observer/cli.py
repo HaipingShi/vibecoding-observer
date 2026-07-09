@@ -3,7 +3,10 @@
 Usage:
     vibecoding-observer [--source claude|codex|all] [--output DIR]
                          [--project PATH | --current-project | --all-history]
-                         [--claude-dir PATH] [--codex-dir PATH] [--version]
+                         [--claude-dir PATH] [--codex-dir PATH]
+                         [--export-share-card | --share-card-svg [PATH]]
+                         [--report-language auto|zh|en]
+                         [--version]
 
 Fully local. The report embeds anomalous event fragments for the consuming
 agent (which IS an LLM) to read and analyze directly.
@@ -33,6 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  vibecoding-observer --project /path/to/project --source claude --output ./my-analysis\n"
             "  vibecoding-observer --all-history --source all --output /tmp/all-history\n"
             "  vibecoding-observer --claude-dir /custom/path --codex-dir /custom/path\n"
+            "  vibecoding-observer --current-project --output ./my-report --export-share-card\n"
+            "  vibecoding-observer --current-project --share-card-svg ./share-card.svg\n"
+            "  vibecoding-observer --current-project --report-language zh\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -82,6 +88,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Custom Codex sessions directory (can repeat; default: ~/.codex/sessions).",
     )
+    share = parser.add_mutually_exclusive_group()
+    share.add_argument(
+        "--export-share-card",
+        action="store_true",
+        help=(
+            "Write a standalone share-card SVG next to the report outputs "
+            "(default path: OUTPUT/share-card.svg, or ./share-card.svg without --output)."
+        ),
+    )
+    share.add_argument(
+        "--share-card-svg",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write a standalone share-card SVG. Optionally pass PATH; without "
+            "PATH it uses OUTPUT/share-card.svg, or ./share-card.svg without --output."
+        ),
+    )
+    parser.add_argument(
+        "--report-language",
+        choices=["auto", "zh", "en"],
+        default="auto",
+        help=(
+            "Language for the user-facing report delivery layer "
+            "(default: auto-detect from local session text)."
+        ),
+    )
     parser.add_argument(
         "--version",
         "-v",
@@ -94,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     project_path = _resolve_project_path(args)
+    share_card_svg_path = _resolve_share_card_svg_path(args)
     if project_path is None:
         print("Scan scope: all AI coding history on this machine", file=sys.stderr)
     else:
@@ -105,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         claude_dir=args.claude_dir,
         codex_dirs=args.codex_dir,
         project_path=project_path,
+        share_card_svg_path=share_card_svg_path,
+        report_language=args.report_language,
     )
 
     try:
@@ -122,9 +160,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Report written to {args.output}/report.md")
         print(f"HTML report written to {args.output}/report.html")
         print(f"Profile written to {args.output}/.analysis-profile.json")
+        if result.share_card_svg_path:
+            print(f"Share card SVG written to {result.share_card_svg_path}")
     else:
         print("\n--- Report ---\n")
         print(result.report_md)
+        if result.share_card_svg_path:
+            print(f"Share card SVG written to {result.share_card_svg_path}")
 
     return 0
 
@@ -169,3 +211,14 @@ def _prompt_scan_scope() -> Path | None:
         if project:
             return Path(project).expanduser().resolve()
     return current
+
+
+def _resolve_share_card_svg_path(args: argparse.Namespace) -> Path | None:
+    """Resolve share-card export flags into a concrete output path."""
+    if not args.export_share_card and args.share_card_svg is None:
+        return None
+    if args.share_card_svg:
+        return Path(args.share_card_svg).expanduser()
+    if args.output:
+        return Path(args.output).expanduser() / "share-card.svg"
+    return Path("share-card.svg")

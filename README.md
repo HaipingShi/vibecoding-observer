@@ -128,6 +128,7 @@ Scan scope is explicit:
 vibecoding-observer --current-project --source all --output ./my-report
 vibecoding-observer --project /path/to/project --source all --output ./my-report
 vibecoding-observer --all-history --source all --output ./my-report
+vibecoding-observer --current-project --source all --output ./my-report --report-language zh
 ```
 
 If no scope flag is provided, an interactive terminal asks which scope to use.
@@ -140,6 +141,18 @@ Output files:
 | `report.html` | Human reader | Visual diagnosis, readable labels, risks, capability matrix, and consulting routes |
 | `report.md` | Human / agent deep read | Evidence-rich report with anomaly fragments and Section VII diagnoses |
 | `.analysis-profile.json` | Agent runtime | Structured `state / trace / guide`, including `consulting_routes` and `consulting_output` contracts |
+| `share-card.svg` | Optional sharing artifact | Standalone positive share card generated with `--export-share-card` or `--share-card-svg PATH` |
+
+Export the screenshot-friendly share card as a standalone SVG:
+
+```bash
+vibecoding-observer --current-project --source all --output ./my-report --export-share-card
+vibecoding-observer --current-project --source all --share-card-svg ./share-card.svg
+```
+
+The report delivery language defaults to `auto` and is detected from local
+session text. Use `--report-language zh` or `--report-language en` to force the
+user-facing HTML/share-card language.
 
 ## Example Report
 
@@ -411,6 +424,7 @@ open ./my-report/report.html
 vibecoding-observer --current-project --source all --output ./my-report
 vibecoding-observer --project /path/to/project --source all --output ./my-report
 vibecoding-observer --all-history --source all --output ./my-report
+vibecoding-observer --current-project --source all --output ./my-report --report-language zh
 ```
 
 如果没有传范围参数，交互式终端会询问扫描范围；非交互式 agent 运行时默认使用当前项目，避免静默扫描全部历史。
@@ -422,6 +436,17 @@ vibecoding-observer --all-history --source all --output ./my-report
 | `report.html` | 用户 | 可视化诊断报告，解释标签、风险、能力矩阵和咨询路线 |
 | `report.md` | 用户 / agent 深读 | 含异常片段、Section VII 诊断建议和可引用证据 |
 | `.analysis-profile.json` | agent 运行态 | 结构化 `state / trace / guide`，包含 `consulting_routes` 和 `consulting_output` 契约 |
+| `share-card.svg` | 可选传播卡 | 用 `--export-share-card` 或 `--share-card-svg PATH` 生成的独立夸夸卡 SVG |
+
+导出适合截图或分享的独立 SVG 夸夸卡：
+
+```bash
+vibecoding-observer --current-project --source all --output ./my-report --export-share-card
+vibecoding-observer --current-project --source all --share-card-svg ./share-card.svg
+```
+
+报告交付语言默认是 `auto`，会从本地会话文本判断开发者主要使用中文还是英文。也可以用
+`--report-language zh` 或 `--report-language en` 强制指定 HTML / 夸夸卡语言。
 
 ## 示例报告
 

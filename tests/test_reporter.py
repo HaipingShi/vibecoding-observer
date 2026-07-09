@@ -14,7 +14,12 @@ from observer.diagnostic_engine import Diagnosis
 from observer.episode import EpisodeSummary
 from observer.extractor import LabeledEvent
 from observer.ir import IREvent
-from observer.reporter import generate_html_report, generate_profile, generate_report
+from observer.reporter import (
+    generate_html_report,
+    generate_profile,
+    generate_report,
+    generate_share_card_svg,
+)
 from observer.taxonomy import ResponsePattern
 
 
@@ -155,6 +160,93 @@ class TestGenerateProfile:
     def test_checklist_structured(self) -> None:
         profile = generate_profile(_make_report(), [])
         assert len(profile["checklist"]) == 5
+
+    def test_profile_includes_positive_share_card(self) -> None:
+        profile = generate_profile(_make_report(), [])
+        card = profile["share_card"]
+
+        assert set(card) == {
+            "title",
+            "language",
+            "score",
+            "score_label",
+            "headline",
+            "subtitle",
+            "achievements",
+            "title_pool",
+            "llm_title_prompt",
+            "cta",
+            "note",
+        }
+        assert card["title"] == "验证洁癖型 Vibe Coder"
+        assert card["language"] == "zh"
+        assert 0 <= card["score"] <= 100
+        assert card["score_label"] == "本次高光指数"
+        assert "能跑就行" in card["headline"]
+        assert card["subtitle"] == "气氛组排名，仅供开心。"
+        assert card["cta"] == "测测你的 AI 搭子人格"
+        assert "这张卡只负责让你开心一下" in card["note"]
+        assert "Prompt 玄学家" in card["title_pool"]
+        assert "重写夸夸卡称号" in card["llm_title_prompt"]
+        assert len(card["achievements"]) == 3
+        assert card["achievements"][0]["title"] == "测试洁癖患者"
+        assert "10 次主动验证" in card["achievements"][0]["evidence"]
+        assert "degen-" not in json.dumps(card, ensure_ascii=False)
+        assert "waste-" not in json.dumps(card, ensure_ascii=False)
+
+    def test_profile_can_emit_english_share_card(self) -> None:
+        profile = generate_profile(_make_report(), [], report_language="en")
+        card = profile["share_card"]
+
+        assert profile["report_language"] == "en"
+        assert card["language"] == "en"
+        assert card["title"] == "Proof-First Vibe Coder"
+        assert card["score_label"] == "Highlight Score"
+        assert "ship-it-and-pray" in card["headline"]
+        assert card["subtitle"] == "Vibes leaderboard. For fun only."
+        assert card["cta"] == "Find your AI pair persona"
+        assert "Prompt DJ" in card["title_pool"]
+        assert "Rewrite the share-card title" in card["llm_title_prompt"]
+        assert card["achievements"][0]["title"] == "Verification Addict"
+
+    def test_share_card_svg_is_self_contained(self) -> None:
+        profile = generate_profile(_make_report(), [])
+
+        svg = generate_share_card_svg(profile)
+
+        assert svg.startswith("<svg ")
+        assert 'xmlns="http://www.w3.org/2000/svg"' in svg
+        assert "VibeCoding Observer 夸夸卡" in svg
+        assert "验证洁癖型" in svg
+        assert "Vibe Coder" in svg
+        assert "本次高光指数" in svg
+        assert "你击败了" in svg
+        assert "气氛组排名" in svg
+        assert "测测你的" in svg
+        assert "AI 搭子人格" in svg
+        assert "这张卡只负责" in svg
+        assert "测试洁癖患者" in svg
+        assert "10 次主动验证" in svg
+        assert "夸夸卡像素宠物" in svg
+        assert "<script" not in svg
+        assert "<image" not in svg
+        assert "href=" not in svg
+        assert "https://" not in svg
+
+    def test_share_card_svg_can_render_english(self) -> None:
+        profile = generate_profile(_make_report(), [], report_language="en")
+
+        svg = generate_share_card_svg(profile)
+
+        assert 'aria-label="VibeCoding Observer share card"' in svg
+        assert "VibeCoding Observer Share Card" in svg
+        assert "Proof-First" in svg
+        assert "Highlight Score" in svg
+        assert "Vibes leaderboard" in svg
+        assert "Find your" in svg
+        assert "AI pair persona" in svg
+        assert "Verification Addict" in svg
+        assert "测试洁癖" not in svg
 
     def test_profile_includes_episode_summaries_when_provided(self) -> None:
         episode = EpisodeSummary(
@@ -474,6 +566,17 @@ class TestGenerateHtmlReport:
         assert ".png" not in html
         assert ".analysis-profile.json" in html
         assert "consulting_routes" in html
+        assert "可截图分享的夸夸卡" in html
+        assert "VibeCoding Observer 夸夸卡" in html
+        assert "验证洁癖型 Vibe Coder" in html
+        assert "本次高光指数" in html
+        assert "你击败了" in html
+        assert "气氛组排名，仅供开心。" in html
+        assert "测测你的 AI 搭子人格" in html
+        assert "测试洁癖患者" in html
+        assert "10 次主动验证" in html
+        assert "这张卡只负责让你开心一下" in html
+        assert "github.com/HaipingShi/vibecoding-observer" not in html
         assert "你的 vibe coding 协作画像" in html
         assert "一句话结论" in html
         assert "你做得好的地方" in html
@@ -517,3 +620,16 @@ class TestGenerateHtmlReport:
         assert "http://" not in html
         assert "https://" not in html
         assert "src=" not in html
+
+    def test_html_report_uses_english_shell_when_requested(self) -> None:
+        profile = generate_profile(_make_report(), [], report_language="en")
+
+        html = generate_html_report(profile)
+
+        assert '<html lang="en">' in html
+        assert "VibeCoding Observer Visual Report" in html
+        assert "Screenshot-Friendly Share Card" in html
+        assert "Your Vibe Coding Collaboration Profile" in html
+        assert "Developer Appendix: labels, confidence, and raw signals" in html
+        assert "VibeCoding Observer Share Card" in html
+        assert "Proof-First Vibe Coder" in html

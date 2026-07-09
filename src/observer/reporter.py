@@ -22,7 +22,12 @@ from observer.episode import EpisodeSummary
 from observer.git_analyzer import GitMetrics
 from observer.project_scanner import ProjectProfile
 
-__all__ = ["generate_html_report", "generate_profile", "generate_report"]
+__all__ = [
+    "generate_html_report",
+    "generate_profile",
+    "generate_report",
+    "generate_share_card_svg",
+]
 
 
 def generate_report(
@@ -32,8 +37,14 @@ def generate_report(
     diagnoses: list[Diagnosis] | None = None,
     project: ProjectProfile | None = None,
     git: GitMetrics | None = None,
+    report_language: str = "zh",
 ) -> str:
-    title = "# 协作工程化效能分析报告"
+    language = _report_language(report_language)
+    title = (
+        "# 协作工程化效能分析报告"
+        if language == "zh"
+        else "# AI Coding Collaboration Diagnostics"
+    )
     if title_suffix:
         title += f" — {title_suffix}"
     sections = [title, ""]
@@ -270,10 +281,15 @@ def generate_profile(
     diagnoses: list[Diagnosis] | None = None,
     episodes: list[EpisodeSummary] | None = None,
     signal_config: dict[str, Any] | None = None,
+    report_language: str = "zh",
+    language_detection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate the machine-readable profile for Phase B consumption."""
+    language = _report_language(report_language)
     profile: dict[str, Any] = {
         "version": "0.1.0",
+        "report_language": language,
+        "language_detection": language_detection or {"source": "default", "confidence": "low"},
         "total_events": report.total_events,
         "total_projects": report.total_projects,
         "developer_type": report.developer_type,
@@ -340,6 +356,12 @@ def generate_profile(
             for d in diagnoses
         ]
 
+    profile["share_card"] = _share_card(
+        report=report,
+        episodes=episodes or [],
+        language=language,
+    )
+
     profile["consulting_routes"] = _consulting_routes(
         report=report,
         diagnoses=diagnoses or [],
@@ -351,11 +373,14 @@ def generate_profile(
 
 def generate_html_report(profile: dict[str, Any]) -> str:
     """Generate a self-contained user-facing HTML report from the profile."""
+    language = _report_language(str(profile.get("report_language", "zh")))
+    ui = _html_ui(language)
     total_events = _as_int(profile.get("total_events"))
     total_projects = _as_int(profile.get("total_projects"))
     developer_type = str(profile.get("developer_type", "unknown"))
     diagnoses = _as_list(profile.get("diagnoses"))
     routes = _as_list(profile.get("consulting_routes"))
+    share_card = _as_dict(profile.get("share_card"))
     episode_summary = _as_dict(profile.get("episode_summary"))
     loop_counts = _as_dict(episode_summary.get("loop_quality_counts"))
     goal_counts = _as_dict(episode_summary.get("goal_quality_counts"))
@@ -459,13 +484,14 @@ def generate_html_report(profile: dict[str, Any]) -> str:
         closed_rate=closed_rate,
     )
     priority_actions = _html_priority_actions(signal_counts=signal_counts)
+    share_card_html = _html_share_card(share_card, avatar_seed=avatar_seed)
 
     return f"""<!doctype html>
-<html lang="zh-CN">
+<html lang="{ui['html_lang']}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VibeCoding Observer 可视化诊断报告</title>
+  <title>{ui['page_title']}</title>
   <style>
     :root {{
       --bg:#f6f7f9; --panel:#fff; --ink:#17202a; --muted:#667085;
@@ -482,6 +508,23 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     .pet-avatar {{ flex:0 0 auto; width:112px; height:112px; filter:drop-shadow(6px 8px 0 rgba(0,0,0,.28)); }}
     .pet-avatar svg,.mini-pet svg {{ display:block; width:100%; height:100%; }}
     .mini-pet {{ float:right; width:54px; height:54px; margin:0 0 8px 10px; }}
+    .share-wrap {{ display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:18px; align-items:stretch; }}
+    .share-card {{ position:relative; overflow:hidden; border:3px solid #17202a; background:#fffaf0; box-shadow:8px 8px 0 #17202a; padding:22px; }}
+    .share-card::before {{ content:""; position:absolute; inset:0; background:linear-gradient(135deg,rgba(31,111,235,.12),transparent 45%,rgba(31,138,91,.14)); pointer-events:none; }}
+    .share-card > * {{ position:relative; }}
+    .share-eyebrow {{ display:inline-flex; border:2px solid #17202a; border-radius:999px; padding:4px 10px; background:#dcfce7; font-size:12px; font-weight:800; }}
+    .share-title {{ margin:14px 0 8px; font-size:clamp(28px,4vw,48px); line-height:1; font-weight:900; letter-spacing:0; }}
+    .share-score {{ display:flex; gap:12px; align-items:flex-end; margin:10px 0 14px; }}
+    .share-score strong {{ font-size:60px; line-height:.88; }}
+    .share-score span {{ max-width:260px; color:#344054; font-weight:700; line-height:1.25; }}
+    .share-achievements {{ display:grid; gap:10px; margin-top:14px; }}
+    .share-achievement {{ border:2px solid #17202a; border-radius:8px; background:#fff; padding:10px 12px; }}
+    .share-achievement strong {{ display:block; font-size:15px; }}
+    .share-achievement p {{ margin:4px 0 0; color:#475467; font-size:13px; }}
+    .share-side {{ display:flex; flex-direction:column; justify-content:space-between; gap:14px; border:2px dashed #17202a; background:#f8fafc; padding:16px; }}
+    .share-pet {{ width:150px; height:150px; align-self:center; filter:drop-shadow(5px 6px 0 rgba(0,0,0,.22)); }}
+    .share-cta {{ border-top:1px dashed #98a2b3; padding-top:12px; color:#17202a; font-size:18px; font-weight:850; line-height:1.25; }}
+    .share-note {{ color:var(--muted); font-size:12px; line-height:1.35; }}
     nav {{ position:sticky; top:0; z-index:5; overflow-x:auto; white-space:nowrap; background:rgba(255,255,255,.94); border-bottom:1px solid var(--line); padding:10px 24px; }}
     nav a {{ display:inline-flex; color:#344054; text-decoration:none; padding:7px 10px; border-radius:6px; font-size:14px; }}
     nav a:hover {{ background:#eef4ff; color:var(--brand); }}
@@ -556,8 +599,8 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     .artifact {{ margin-top:auto; border-top:1px solid var(--line); padding-top:10px; color:#344054; font-size:13px; }}
     .callout {{ border:1px solid #b8d4ff; background:#eef6ff; border-radius:8px; padding:16px; }}
     .footer {{ color:var(--muted); font-size:12px; padding-top:18px; border-top:1px solid var(--line); }}
-    @media (max-width:1100px) {{ .kpi,.routes,.three,.four {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
-    @media (max-width:760px) {{ header {{ padding:24px 18px; }} .hero {{ align-items:flex-start; }} .pet-avatar {{ width:76px; height:76px; }} nav {{ padding:8px 12px; }} nav a {{ font-size:13px; }} main {{ padding:22px 14px 36px; }} .panel {{ padding:14px; }} .persona-strip {{ box-shadow:4px 4px 0 #17202a; }} .persona-card {{ min-height:auto; }} .kpi,.two,.three,.four,.routes {{ grid-template-columns:1fr; }} .bar-row {{ grid-template-columns:1fr auto; gap:6px 10px; }} .bar-label {{ grid-column:1 / -1; }} .bar-track {{ grid-column:1; }} .bar-value {{ grid-column:2; }} .route-card {{ min-height:auto; }} .matrix th,.matrix td {{ padding:8px 6px; font-size:12px; }} }}
+    @media (max-width:1100px) {{ .kpi,.routes,.three,.four {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .share-wrap {{ grid-template-columns:1fr; }} }}
+    @media (max-width:760px) {{ header {{ padding:24px 18px; }} .hero {{ align-items:flex-start; }} .pet-avatar {{ width:76px; height:76px; }} nav {{ padding:8px 12px; }} nav a {{ font-size:13px; }} main {{ padding:22px 14px 36px; }} .panel {{ padding:14px; }} .share-card {{ box-shadow:4px 4px 0 #17202a; padding:16px; }} .share-score strong {{ font-size:46px; }} .share-pet {{ width:112px; height:112px; }} .persona-strip {{ box-shadow:4px 4px 0 #17202a; }} .persona-card {{ min-height:auto; }} .kpi,.two,.three,.four,.routes {{ grid-template-columns:1fr; }} .bar-row {{ grid-template-columns:1fr auto; gap:6px 10px; }} .bar-label {{ grid-column:1 / -1; }} .bar-track {{ grid-column:1; }} .bar-value {{ grid-column:2; }} .route-card {{ min-height:auto; }} .matrix th,.matrix td {{ padding:8px 6px; font-size:12px; }} }}
   </style>
 </head>
 <body>
@@ -565,38 +608,42 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     <div class="hero">
       <div class="pet-avatar">{report_avatar}</div>
       <div class="hero-copy">
-        <h1>VibeCoding Observer 可视化诊断报告</h1>
-        <p>基于 {_fmt(total_projects)} 个项目、{_fmt(total_events)} 条 AI coding agent 交互事件生成。旁边这只代码生成的诊断宠物，会根据本次报告的状态换颜色和表情。</p>
+        <h1>{ui['page_title']}</h1>
+        <p>{ui['hero_prefix']} {_fmt(total_projects)} {ui['project_unit']}、{_fmt(total_events)} {ui['event_unit']}。{ui['hero_pet']}</p>
       </div>
     </div>
   </header>
   <nav>
-    <a href="#portrait">协作画像</a><a href="#conclusion">一句话结论</a><a href="#strengths">做得好的地方</a><a href="#problems">最拖慢你的 3 个问题</a><a href="#actions">优先级行动</a><a href="#appendix">开发者附录</a>
+    <a href="#share-card">{ui['nav_share']}</a><a href="#portrait">{ui['nav_portrait']}</a><a href="#conclusion">{ui['nav_conclusion']}</a><a href="#strengths">{ui['nav_strengths']}</a><a href="#problems">{ui['nav_problems']}</a><a href="#actions">{ui['nav_actions']}</a><a href="#appendix">{ui['nav_appendix']}</a>
   </nav>
   <main>
+    <section id="share-card">
+      <h2>{ui['share_heading']}</h2>
+      {share_card_html}
+    </section>
     <section id="portrait">
-      <h2>你的 vibe coding 协作画像</h2>
+      <h2>{ui['portrait_heading']}</h2>
       <div class="panel portrait">{portrait_html}</div>
     </section>
     <section id="conclusion">
-      <h2>一句话结论</h2>
+      <h2>{ui['conclusion_heading']}</h2>
       <div class="panel conclusion">{conclusion_html}</div>
     </section>
     <section id="strengths">
-      <h2>你做得好的地方</h2>
+      <h2>{ui['strengths_heading']}</h2>
       <div class="grid two">{strengths_html}</div>
     </section>
     <section id="problems">
-      <h2>最拖慢你的 3 个问题</h2>
+      <h2>{ui['problems_heading']}</h2>
       <div class="grid three">{problem_cards}</div>
     </section>
     <section id="actions">
-      <h2>优先级行动</h2>
+      <h2>{ui['actions_heading']}</h2>
       {priority_actions}
     </section>
     <section id="appendix">
       <details class="appendix">
-        <summary>开发者附录：内部标签、置信度和原始信号</summary>
+        <summary>{ui['appendix_summary']}</summary>
         <div class="grid kpi">
           {_html_metric("分析项目", _fmt(total_projects), "多源融合后的项目数")}
           {_html_metric("交互事件", _fmt(total_events), "本地会话历史，无网络上传")}
@@ -631,7 +678,7 @@ def generate_html_report(profile: dict[str, Any]) -> str:
       </details>
     </section>
     <section class="footer">
-      <p>本 HTML 由 VibeCoding Observer 从 `.analysis-profile.json` 自动生成，动态路线来自 `consulting_routes`。它是用户侧静态交付物，不包含外部脚本、外部图片或网络请求。</p>
+      <p>{ui['footer']}</p>
     </section>
   </main>
 </body>
@@ -660,6 +707,662 @@ def _as_int(value: Any) -> int:
 
 def _fmt(value: int) -> str:
     return f"{value:,}"
+
+
+def _report_language(value: str) -> str:
+    return "en" if str(value).lower().startswith("en") else "zh"
+
+
+def _html_ui(language: str) -> dict[str, str]:
+    if _report_language(language) == "en":
+        return {
+            "html_lang": "en",
+            "page_title": "VibeCoding Observer Visual Report",
+            "hero_prefix": "Generated from",
+            "project_unit": "project(s)",
+            "event_unit": "AI coding agent events",
+            "hero_pet": "The pixel pet is generated by code and changes mood with the report.",
+            "nav_share": "Share Card",
+            "nav_portrait": "Profile",
+            "nav_conclusion": "Bottom Line",
+            "nav_strengths": "Strengths",
+            "nav_problems": "Top 3 Frictions",
+            "nav_actions": "Actions",
+            "nav_appendix": "Developer Appendix",
+            "share_heading": "Screenshot-Friendly Share Card",
+            "portrait_heading": "Your Vibe Coding Collaboration Profile",
+            "conclusion_heading": "Bottom Line",
+            "strengths_heading": "What You Already Do Well",
+            "problems_heading": "The 3 Things Slowing You Down",
+            "actions_heading": "Priority Actions",
+            "appendix_summary": "Developer Appendix: labels, confidence, and raw signals",
+            "footer": (
+                "This HTML is generated from `.analysis-profile.json`. Dynamic routes "
+                "come from `consulting_routes`. It is self-contained and uses no "
+                "external scripts, images, or network requests."
+            ),
+        }
+    return {
+        "html_lang": "zh-CN",
+        "page_title": "VibeCoding Observer 可视化诊断报告",
+        "hero_prefix": "基于",
+        "project_unit": "个项目",
+        "event_unit": "条 AI coding agent 交互事件生成",
+        "hero_pet": "旁边这只代码生成的诊断宠物，会根据本次报告的状态换颜色和表情。",
+        "nav_share": "夸夸卡",
+        "nav_portrait": "协作画像",
+        "nav_conclusion": "一句话结论",
+        "nav_strengths": "做得好的地方",
+        "nav_problems": "最拖慢你的 3 个问题",
+        "nav_actions": "优先级行动",
+        "nav_appendix": "开发者附录",
+        "share_heading": "可截图分享的夸夸卡",
+        "portrait_heading": "你的 vibe coding 协作画像",
+        "conclusion_heading": "一句话结论",
+        "strengths_heading": "你做得好的地方",
+        "problems_heading": "最拖慢你的 3 个问题",
+        "actions_heading": "优先级行动",
+        "appendix_summary": "开发者附录：内部标签、置信度和原始信号",
+        "footer": (
+            "本 HTML 由 VibeCoding Observer 从 `.analysis-profile.json` 自动生成，"
+            "动态路线来自 `consulting_routes`。它是用户侧静态交付物，不包含外部脚本、"
+            "外部图片或网络请求。"
+        ),
+    }
+
+
+def _share_card(
+    report: Report,
+    episodes: list[EpisodeSummary],
+    *,
+    language: str,
+) -> dict[str, Any]:
+    """Build a playful, screenshot-friendly card from positive signals."""
+    language = _report_language(language)
+    verify_count = report.label_count("eng-verify")
+    decompose_count = report.label_count("eng-decompose")
+    cross_verify_count = report.label_count("eng-cross-verify")
+    first_principle_count = report.label_count("act-first-principle")
+    constraint_count = report.label_count("act-constraint-reason")
+    design_closed_count = sum(1 for ep in episodes if ep.loop_quality == "design_closed")
+    closed_count = sum(
+        1
+        for ep in episodes
+        if ep.loop_quality in {"closed_verified", "implementation_closed", "design_closed"}
+    )
+    episode_total = len(episodes)
+    closed_rate = (closed_count / episode_total * 100) if episode_total else 0.0
+    wrong_layer_count = report.label_count("degen-wrong-layer")
+    passive_count = report.label_count("act-passive")
+    weak_goal_count = sum(
+        1
+        for ep in episodes
+        if "weak_goal" in ep.diagnostic_signals or "unusable_goal" in ep.diagnostic_signals
+    )
+
+    positive_points = (
+        min(22, verify_count * 2)
+        + min(12, decompose_count * 3)
+        + min(12, cross_verify_count * 4)
+        + min(12, first_principle_count * 2)
+        + min(12, constraint_count * 2)
+        + min(16, round(closed_rate / 6))
+        + min(10, design_closed_count * 2)
+    )
+    friction_penalty = min(14, wrong_layer_count + passive_count // 2 + weak_goal_count)
+    score_floor = 58 if report.total_events == 0 else 72
+    score = max(score_floor, min(97, 70 + positive_points - friction_penalty))
+
+    achievements = _share_card_achievements(
+        verify_count=verify_count,
+        decompose_count=decompose_count,
+        cross_verify_count=cross_verify_count,
+        first_principle_count=first_principle_count,
+        constraint_count=constraint_count,
+        wrong_layer_count=wrong_layer_count,
+        closed_count=closed_count,
+        episode_total=episode_total,
+        design_closed_count=design_closed_count,
+        language=language,
+    )
+    title = _share_card_title(achievements, language=language)
+    if language == "en":
+        headline = (
+            f"You defeated {score}% of the ship-it-and-pray impulse"
+            if report.total_events
+            else "Your AI collaboration highlight reel is warming up"
+        )
+        subtitle = "Vibes leaderboard. For fun only."
+        score_label = "Highlight Score"
+        cta = "Find your AI pair persona"
+        note = "Full report has the roast. This card is just for fun."
+    else:
+        headline = (
+            f"你击败了 {score}% 的“能跑就行”冲动"
+            if report.total_events
+            else "你的 AI 协作高光正在加载"
+        )
+        subtitle = "气氛组排名，仅供开心。"
+        score_label = "本次高光指数"
+        cta = "测测你的 AI 搭子人格"
+        note = "完整吐槽在报告正文，这张卡只负责让你开心一下。"
+    return {
+        "title": title,
+        "language": language,
+        "score": score,
+        "score_label": score_label,
+        "headline": headline,
+        "subtitle": subtitle,
+        "achievements": achievements,
+        "title_pool": _share_title_pool(language),
+        "llm_title_prompt": _share_title_rewrite_prompt(language),
+        "cta": cta,
+        "note": note,
+    }
+
+
+def _share_card_achievements(
+    *,
+    verify_count: int,
+    decompose_count: int,
+    cross_verify_count: int,
+    first_principle_count: int,
+    constraint_count: int,
+    wrong_layer_count: int,
+    closed_count: int,
+    episode_total: int,
+    design_closed_count: int,
+    language: str,
+) -> list[dict[str, str]]:
+    if _report_language(language) == "en":
+        candidates = [
+            (
+                verify_count,
+                "Verification Addict",
+                f"{_fmt(verify_count)} verification moves",
+                "You make the agent prove it before you trust it.",
+            ),
+            (
+                decompose_count,
+                "Task Slicer",
+                f"{_fmt(decompose_count)} decomposition signals",
+                "Big messy work gets chopped before it gets shipped.",
+            ),
+            (
+                cross_verify_count,
+                "Cross-Check Enjoyer",
+                f"{_fmt(cross_verify_count)} review signals",
+                "You let evidence argue with itself.",
+            ),
+            (
+                first_principle_count,
+                "First-Principles Mode",
+                f"{_fmt(first_principle_count)} root-cause prompts",
+                "You pull the problem back to the mechanism.",
+            ),
+            (
+                constraint_count,
+                "Boundary Setter",
+                f"{_fmt(constraint_count)} constraint signals",
+                "You draw the lane before the agent floors it.",
+            ),
+            (
+                closed_count,
+                "Loop Closer",
+                f"{_fmt(closed_count)} / {_fmt(episode_total)} episodes closed",
+                "You turn chat motion into recoverable state.",
+            ),
+            (
+                design_closed_count,
+                "Design Closer",
+                f"{_fmt(design_closed_count)} design/doc loops",
+                "ADRs, traces, and docs count as real artifacts here.",
+            ),
+            (
+                1 if wrong_layer_count == 0 else 0,
+                "Architecture Radar",
+                "0 detected wrong-layer slips",
+                "This sample rarely dropped big problems into tiny fixes.",
+            ),
+        ]
+    else:
+        candidates = [
+            (
+                verify_count,
+                "测试洁癖患者",
+                f"{_fmt(verify_count)} 次主动验证",
+                "从不裸奔交付，把“能跑”追问到“能交”。",
+            ),
+            (
+                decompose_count,
+                "任务切片师",
+                f"{_fmt(decompose_count)} 次拆解信号",
+                "复杂项目在你手里会先切片，再开火。",
+            ),
+            (
+                cross_verify_count,
+                "复核上瘾玩家",
+                f"{_fmt(cross_verify_count)} 次复核信号",
+                "你不迷信单一路径，知道让证据互相打架。",
+            ),
+            (
+                first_principle_count,
+                "第一性原理信徒",
+                f"{_fmt(first_principle_count)} 次本质追问",
+                "你会把问题拆回底层机制，不只追着表象跑。",
+            ),
+            (
+                constraint_count,
+                "边界感很强",
+                f"{_fmt(constraint_count)} 次约束反推",
+                "你知道先画边界，AI 才不容易越跑越远。",
+            ),
+            (
+                closed_count,
+                "闭环收纳王",
+                f"{_fmt(closed_count)} / {_fmt(episode_total)} 个任务片段可识别收束",
+                "你不只让 AI 做事，也会把状态收回可恢复的位置。",
+            ),
+            (
+                design_closed_count,
+                "设计闭环玩家",
+                f"{_fmt(design_closed_count)} 个设计/文档闭环",
+                "架构、ADR、trace 这类非代码产物也被你当成正式成果。",
+            ),
+            (
+                1 if wrong_layer_count == 0 else 0,
+                "架构显微镜",
+                "0 次可识别抽象层级误判",
+                "本次样本里，你很少把高层问题低层硬解。",
+            ),
+        ]
+    selected = [
+        {"title": title, "evidence": evidence, "quip": quip}
+        for score, title, evidence, quip in sorted(candidates, key=lambda item: item[0], reverse=True)
+        if score > 0 and evidence
+    ][:3]
+    if len(selected) >= 3:
+        return selected
+    fallback = (
+        [
+            {
+                "title": "Local-First Player",
+                "evidence": "Logs stayed local",
+                "quip": "Good taste starts with context boundaries.",
+            },
+            {
+                "title": "Retro Launcher",
+                "evidence": "Structured collaboration report generated",
+                "quip": "Turning vibes into evidence is already a power move.",
+            },
+            {
+                "title": "Next Run Buffed",
+                "evidence": "Reusable prompt templates are ready",
+                "quip": "The next session starts with better stats.",
+            },
+        ]
+        if _report_language(language) == "en"
+        else [
+            {
+                "title": "本地优先玩家",
+                "evidence": "日志留在本机",
+                "quip": "高级玩家先保护上下文。",
+            },
+            {
+                "title": "复盘启动器",
+                "evidence": "已生成结构化协作报告",
+                "quip": "能把模糊体感变成证据，本身就是工程优势。",
+            },
+            {
+                "title": "下一轮更强",
+                "evidence": "报告已给出可复制 prompt 模板",
+                "quip": "下次不是重新开始，是带着诊断继续升级。",
+            },
+        ]
+    )
+    return [*selected, *fallback][:3]
+
+
+def _share_card_title(achievements: list[dict[str, str]], *, language: str) -> str:
+    if not achievements:
+        return "Local-First Retro Player" if _report_language(language) == "en" else "本地优先复盘玩家"
+    primary = achievements[0].get("title", "AI 协作玩家")
+    if _report_language(language) == "en":
+        if primary in {"Verification Addict", "Cross-Check Enjoyer"}:
+            return "Proof-First Vibe Coder"
+        if primary in {"First-Principles Mode", "Architecture Radar"}:
+            return "Systems-Brain Vibe Coder"
+        if primary in {"Task Slicer", "Loop Closer"}:
+            return "Loop-Closing Vibe Coder"
+        if primary == "Design Closer":
+            return "Design-Finisher Vibe Coder"
+        return "Local-First Retro Player"
+    if primary in {"测试洁癖患者", "复核上瘾玩家"}:
+        return "验证洁癖型 Vibe Coder"
+    if primary in {"第一性原理信徒", "架构显微镜"}:
+        return "工程思想派 Vibe Coder"
+    if primary in {"任务切片师", "闭环收纳王"}:
+        return "闭环推进型 Vibe Coder"
+    if primary == "设计闭环玩家":
+        return "设计收束型 Vibe Coder"
+    return "本地优先复盘玩家"
+
+
+def _share_title_pool(language: str) -> list[str]:
+    if _report_language(language) == "en":
+        return [
+            "Proof-First Vibe Coder",
+            "Systems-Brain Vibe Coder",
+            "Loop-Closing Vibe Coder",
+            "Prompt DJ",
+            "Context Bodyguard",
+            "Bug Reproduction Enjoyer",
+            "Ship-It Impulse Slayer",
+            "Design-Finisher Vibe Coder",
+        ]
+    return [
+        "验证洁癖型 Vibe Coder",
+        "工程思想派 Vibe Coder",
+        "闭环推进型 Vibe Coder",
+        "Prompt 玄学家",
+        "上下文保镖",
+        "复现狂热玩家",
+        "能跑就行克星",
+        "设计收束型 Vibe Coder",
+    ]
+
+
+def _share_title_rewrite_prompt(language: str) -> str:
+    if _report_language(language) == "en":
+        return (
+            "Rewrite the share-card title in the developer's voice. Keep it short, "
+            "playful, screenshot-friendly, and based only on the listed achievements. "
+            "Do not add private facts or pretend this is a real global ranking."
+        )
+    return (
+        "请按开发者自己的语言风格重写夸夸卡称号。要求短、好玩、适合截图，"
+        "只基于 achievements 里的高光，不要添加私密事实，也不要把气氛组排名说成真实排名。"
+    )
+
+
+def _html_share_card(card: dict[str, Any], *, avatar_seed: str) -> str:
+    language = _report_language(str(card.get("language", "zh")))
+    eyebrow = "VibeCoding Observer Share Card" if language == "en" else "VibeCoding Observer 夸夸卡"
+    aria = "screenshot-friendly share card" if language == "en" else "可截图分享的夸夸卡"
+    pet_title = "share-card pixel pet" if language == "en" else "夸夸卡像素宠物"
+    achievements = [
+        item for item in _as_list(card.get("achievements"))
+        if isinstance(item, dict)
+    ][:3]
+    pet = _pet_avatar_svg(
+        f"share:{avatar_seed}:{card.get('title', '')}",
+        mood="happy",
+        size=150,
+        title=pet_title,
+    )
+    achievement_html = "".join(
+        '<div class="share-achievement">'
+        f"<strong>{escape(str(item.get('title', '高光成就')))}</strong>"
+        f"<p>{escape(str(item.get('evidence', '本地报告识别到正向信号')))}</p>"
+        f"<p>{escape(str(item.get('quip', '这是一条值得保留的协作习惯。')))}</p>"
+        "</div>"
+        for item in achievements
+    )
+    return (
+        '<div class="share-wrap">'
+        f'<div class="share-card" aria-label="{escape(aria)}">'
+        f'<span class="share-eyebrow">{escape(eyebrow)}</span>'
+        f'<div class="share-title">{escape(str(card.get("title", "AI 协作高光玩家")))}</div>'
+        '<div class="share-score">'
+        f'<strong>{_fmt(_as_int(card.get("score")))}</strong>'
+        f'<span>{escape(str(card.get("score_label", "本次高光指数")))}<br>{escape(str(card.get("headline", "")))}</span>'
+        "</div>"
+        f'<p>{escape(str(card.get("subtitle", "")))}</p>'
+        f'<div class="share-achievements">{achievement_html}</div>'
+        "</div>"
+        '<div class="share-side">'
+        f'<div class="share-pet">{pet}</div>'
+        f'<div class="share-cta">{escape(str(card.get("cta", "")))}</div>'
+        f'<div class="share-note">{escape(str(card.get("note", "")))}</div>'
+        "</div>"
+        "</div>"
+    )
+
+
+def generate_share_card_svg(profile: dict[str, Any], *, width: int = 1200, height: int = 630) -> str:
+    """Render the share-card copy as a standalone, self-contained SVG."""
+    card = _as_dict(profile.get("share_card"))
+    language = _report_language(str(card.get("language", profile.get("report_language", "zh"))))
+    eyebrow = "VibeCoding Observer Share Card" if language == "en" else "VibeCoding Observer 夸夸卡"
+    aria = "VibeCoding Observer share card" if language == "en" else "VibeCoding Observer 夸夸卡"
+    pet_title = "share-card pixel pet" if language == "en" else "夸夸卡像素宠物"
+    achievements = [
+        item for item in _as_list(card.get("achievements"))
+        if isinstance(item, dict)
+    ][:3]
+    seed = (
+        f"{profile.get('developer_type', 'unknown')}:"
+        f"{profile.get('total_events', 0)}:"
+        f"{profile.get('total_projects', 0)}:"
+        f"{card.get('title', '')}"
+    )
+    achievement_blocks = []
+    for idx, item in enumerate(achievements):
+        top = 356 + idx * 74
+        achievement_blocks.append(
+            f'<rect x="64" y="{top}" width="748" height="64" rx="12" '
+            'fill="#ffffff" stroke="#17202a" stroke-width="3"/>'
+            f'<text x="88" y="{top + 26}" class="achievement-title">'
+            f'{escape(str(item.get("title", "高光成就")))}</text>'
+            f'{_svg_text_lines(str(item.get("evidence", "")), x=88, y=top + 50, max_chars=56, line_height=20, class_name="achievement-copy", max_lines=1)}'
+        )
+    pet = _svg_pet_avatar(
+        f"share-svg:{seed}",
+        mood="happy",
+        x=886,
+        y=96,
+        size=210,
+        title=pet_title,
+    )
+    score = _fmt(_as_int(card.get("score")))
+    headline = str(card.get("headline", "你的 AI 协作高光正在加载"))
+    subtitle = str(card.get("subtitle", "气氛组排名，仅供开心。"))
+    title = str(card.get("title", "AI 协作高光玩家"))
+    cta = str(card.get("cta", "测测你的 AI 搭子人格"))
+    note = str(card.get("note", "完整吐槽在报告正文，这张卡只负责让你开心一下。"))
+    title_svg = _svg_share_title(title)
+    cta_svg = (
+        '<text x="876" y="396" class="cta">测测你的</text>'
+        '<text x="876" y="428" class="cta">AI 搭子人格</text>'
+        if cta == "测测你的 AI 搭子人格"
+        else (
+            '<text x="876" y="396" class="cta">Find your</text>'
+            '<text x="876" y="428" class="cta">AI pair persona</text>'
+            if cta == "Find your AI pair persona"
+            else _svg_text_lines(
+                cta,
+                x=876,
+                y=396,
+                max_chars=11,
+                line_height=32,
+                class_name="cta",
+                max_lines=2,
+            )
+        )
+    )
+    note_svg = (
+            '<text x="876" y="462" class="note">完整吐槽在报告正文</text>'
+            '<text x="876" y="480" class="note">这张卡只负责让你开心一下</text>'
+            if note == "完整吐槽在报告正文，这张卡只负责让你开心一下。"
+            else (
+            '<text x="876" y="462" class="note">Full report has the roast.</text>'
+            '<text x="876" y="480" class="note">This card is just for fun.</text>'
+            if note == "Full report has the roast. This card is just for fun."
+            else _svg_text_lines(
+                note,
+                x=876,
+                y=462,
+                max_chars=15,
+                line_height=22,
+                class_name="note",
+                max_lines=2,
+            )
+        )
+    )
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 1200 630" role="img" aria-label="{escape(aria)}">
+  <title>{escape(title)}</title>
+  <style>
+    .eyebrow {{ font: 800 24px system-ui, -apple-system, Segoe UI, sans-serif; fill:#17202a; }}
+    .title {{ font: 900 52px system-ui, -apple-system, Segoe UI, sans-serif; fill:#17202a; }}
+    .score {{ font: 900 112px system-ui, -apple-system, Segoe UI, sans-serif; fill:#17202a; }}
+    .score-label {{ font: 800 28px system-ui, -apple-system, Segoe UI, sans-serif; fill:#344054; }}
+    .copy {{ font: 600 24px system-ui, -apple-system, Segoe UI, sans-serif; fill:#344054; }}
+    .achievement-title {{ font: 800 24px system-ui, -apple-system, Segoe UI, sans-serif; fill:#17202a; }}
+    .achievement-copy {{ font: 500 18px system-ui, -apple-system, Segoe UI, sans-serif; fill:#475467; }}
+    .cta {{ font: 800 26px system-ui, -apple-system, Segoe UI, sans-serif; fill:#17202a; }}
+    .note {{ font: 500 17px system-ui, -apple-system, Segoe UI, sans-serif; fill:#667085; }}
+  </style>
+  <rect width="1200" height="630" rx="0" fill="#f6f7f9"/>
+  <rect x="34" y="34" width="1132" height="562" rx="24" fill="#17202a"/>
+  <rect x="24" y="24" width="1132" height="562" rx="24" fill="#fffaf0" stroke="#17202a" stroke-width="6"/>
+  <path d="M24 24H1156V586H24Z" fill="url(#glow)"/>
+  <defs>
+    <linearGradient id="glow" x1="24" y1="24" x2="1156" y2="586" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#dbeafe" stop-opacity="0.95"/>
+      <stop offset="0.52" stop-color="#fffaf0" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#dcfce7" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="62" width="{420 if language == "en" else 360}" height="46" rx="23" fill="#dcfce7" stroke="#17202a" stroke-width="3"/>
+  <text x="84" y="94" class="eyebrow">{escape(eyebrow)}</text>
+  {title_svg}
+  <text x="64" y="300" class="score">{escape(score)}</text>
+  <text x="260" y="252" class="score-label">{escape(str(card.get("score_label", "本次高光指数")))}</text>
+  {_svg_text_lines(headline, x=260, y=290, max_chars=31, line_height=30, class_name="copy", max_lines=2)}
+  {_svg_text_lines(subtitle, x=64, y=334, max_chars=34, line_height=28, class_name="copy", max_lines=1)}
+  {"".join(achievement_blocks)}
+  <rect x="850" y="70" width="282" height="264" rx="20" fill="#f8fafc" stroke="#17202a" stroke-width="4" stroke-dasharray="12 8"/>
+  {pet}
+  <rect x="850" y="356" width="282" height="132" rx="16" fill="#ffffff" stroke="#17202a" stroke-width="3"/>
+  {cta_svg}
+  {note_svg}
+</svg>
+"""
+
+
+def _svg_text_lines(
+    text: str,
+    *,
+    x: int,
+    y: int,
+    max_chars: int,
+    line_height: int,
+    class_name: str,
+    max_lines: int,
+) -> str:
+    lines = _wrap_svg_text(text, max_chars=max_chars, max_lines=max_lines)
+    return "".join(
+        f'<text x="{x}" y="{y + idx * line_height}" class="{class_name}">{escape(line)}</text>'
+        for idx, line in enumerate(lines)
+    )
+
+
+def _svg_share_title(title: str) -> str:
+    """Render the share-card title with stable line breaks for social cards."""
+    if title.endswith(" Vibe Coder"):
+        prefix = title.removesuffix(" Vibe Coder").strip()
+        return (
+            f'<text x="64" y="158" class="title">{escape(prefix)}</text>'
+            '<text x="64" y="214" class="title">Vibe Coder</text>'
+        )
+    return _svg_text_lines(
+        title,
+        x=64,
+        y=158,
+        max_chars=12,
+        line_height=54,
+        class_name="title",
+        max_lines=2,
+    )
+
+
+def _wrap_svg_text(text: str, *, max_chars: int, max_lines: int) -> list[str]:
+    normalized = " ".join(text.split())
+    if not normalized:
+        return []
+    if " " in normalized:
+        return _wrap_svg_words(normalized, max_chars=max_chars, max_lines=max_lines)
+    lines: list[str] = []
+    current = ""
+    for char in normalized:
+        if len(current) >= max_chars and char != " ":
+            lines.append(current.rstrip())
+            current = ""
+            if len(lines) >= max_lines:
+                break
+        current += char
+    if current and len(lines) < max_lines:
+        lines.append(current.rstrip())
+    if len(lines) == max_lines and len("".join(lines)) < len(normalized):
+        lines[-1] = lines[-1].rstrip("，。,. ") + "..."
+    return lines
+
+
+def _wrap_svg_words(text: str, *, max_chars: int, max_lines: int) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = word if not current else f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = word
+        else:
+            lines.append(word[:max_chars].rstrip())
+            current = word[max_chars:].lstrip()
+        if len(lines) >= max_lines:
+            break
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    if len(lines) == max_lines and " ".join(lines) != text:
+        lines[-1] = lines[-1].rstrip("，。,. ") + "..."
+    return lines
+
+
+def _svg_pet_avatar(
+    seed: str,
+    *,
+    mood: str,
+    x: int,
+    y: int,
+    size: int,
+    title: str,
+) -> str:
+    digest = hashlib.sha256(seed.encode("utf-8")).digest()
+    palette = [
+        ("#7dd3fc", "#0e7490", "#fef3c7", "#ecfeff"),
+        ("#86efac", "#166534", "#dcfce7", "#f0fdf4"),
+        ("#f9a8d4", "#9d174d", "#ffe4e6", "#fff1f2"),
+        ("#c4b5fd", "#5b21b6", "#ede9fe", "#faf5ff"),
+        ("#fdba74", "#9a3412", "#ffedd5", "#fff7ed"),
+    ]
+    body, ink, accent, background = palette[digest[0] % len(palette)]
+    cells = _pixel_pet_cells(digest=digest, mood=mood)
+    pixels = _pixel_cells_svg(cells, body=body, ink=ink, accent=accent)
+    scale = size / 104
+    return (
+        f'<g transform="translate({x} {y}) scale({scale:.4f})">'
+        f"<title>{escape(title)}</title>"
+        f'<rect x="8" y="8" width="88" height="88" rx="10" fill="{background}" '
+        'stroke="#17202a" stroke-width="4"/>'
+        '<g shape-rendering="crispEdges">'
+        f"{pixels}"
+        "</g>"
+        "</g>"
+    )
 
 
 _LABEL_EXPLANATIONS: dict[str, tuple[str, str]] = {

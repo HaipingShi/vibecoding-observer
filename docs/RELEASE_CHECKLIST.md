@@ -25,8 +25,8 @@ Use this checklist before publishing `vibecoding-observer`.
 ## 3. Privacy And Asset Boundary
 
 - [ ] Do not publish local Claude/Codex logs.
-- [ ] Do not publish generated `report.html`, `report.md`, or
-  `.analysis-profile.json`.
+- [ ] Do not publish generated `report.html`, `report.md`,
+  `.analysis-profile.json`, or `share-card.svg` from real local logs.
 - [ ] Do not publish `.agent/`, `.coderail/`, `coderail-output/`,
   `project-template/`, or other governance scaffolding/run state.
 - [ ] Do not publish `.venv/`, `.ruff_cache/`, `.pytest_cache/`, build caches,

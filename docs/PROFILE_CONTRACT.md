@@ -48,6 +48,8 @@ Required core fields:
 | Field | Type | Meaning |
 |---|---|---|
 | `version` | string | Profile contract version emitted by the reporter. |
+| `report_language` | string | User-facing delivery language, currently `zh` or `en`. |
+| `language_detection` | object | How the language was selected, such as CLI override or local text auto-detection. |
 | `total_events` | number | Total analyzed IR events. |
 | `total_projects` | number | Total analyzed projects. |
 | `developer_type` | string | Aggregated collaboration type. |
@@ -58,6 +60,7 @@ Required core fields:
 | `effective_activations` | array | Activation labels sorted by count. |
 | `anomalies` | array | Selected anomaly summaries. |
 | `checklist` | array | Structured engineering-thinking checklist. |
+| `share_card` | object | Positive, screenshot-friendly delivery copy for the optional standalone share-card SVG and the HTML share section. |
 | `consulting_routes` | array | Dynamic consulting entry points generated from current evidence. |
 
 Conditionally present fields:
@@ -87,6 +90,35 @@ profiles describe project or team dialects.
 Supported project-local config files are `observer.yaml`, `.observer.yaml`,
 `observer.json`, and `observer.toml`. The YAML reader intentionally supports
 only simple scalars and lists so the runtime stays dependency-free.
+
+## Share Card
+
+`share_card` is a playful user-delivery wrapper. It packages positive evidence
+from the current run into screenshot-friendly copy for `report.html` and
+optional `share-card.svg` export.
+
+The card should:
+
+- Show only positive engineering signals.
+- Avoid exposing private conversation fragments.
+- Keep exaggeration playful and avoid using it as a serious diagnostic score.
+- Point readers to the full report for risks and diagnostic details.
+
+Required fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `title` | string | User-facing achievement title. |
+| `language` | string | Language used for the card copy. |
+| `score` | number | Local-run highlight score, 0-100. It is not a global percentile. |
+| `score_label` | string | Label for `score`, for example `本次高光指数`. |
+| `headline` | string | Main brag-card line. |
+| `subtitle` | string | Short caveat explaining this is report-local packaging. |
+| `achievements` | array | Three positive achievements with `title`, `evidence`, and `quip`. |
+| `title_pool` | array[string] | Preset playful titles in the detected report language. |
+| `llm_title_prompt` | string | Prompt a downstream user-owned agent can use to rewrite the title without observer calling an LLM. |
+| `cta` | string | Share-friendly call to action. |
+| `note` | string | Boundary note linking the card back to the full diagnosis. |
 
 ## Consulting Routes
 
