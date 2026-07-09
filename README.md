@@ -16,6 +16,8 @@ actionable diagnostic report.
 <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue.svg?logo=opensourceinitiative&logoColor=white"></a>
 <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
 <a href="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/ci.yml"><img alt="tests" src="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/ci.yml/badge.svg"></a>
+<a href="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/demo-report.yml"><img alt="demo report" src="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/demo-report.yml/badge.svg"></a>
+<a href="https://github.com/HaipingShi/vibecoding-observer/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/HaipingShi/vibecoding-observer?style=flat&logo=github"></a>
 <img alt="Claude Code" src="https://img.shields.io/badge/Claude_Code-supported-D97757?logo=anthropic&logoColor=white">
 <img alt="Codex" src="https://img.shields.io/badge/Codex-supported-412991?logo=openai&logoColor=white">
 
@@ -64,6 +66,22 @@ Extractor: 28 labels across closed diagnostic dimensions
 Aggregation + anomaly detection + episode analysis
         ↓
 report.html + report.md + .analysis-profile.json
+```
+
+```mermaid
+flowchart LR
+  A["Claude Code / Codex local logs"] --> B["Adapters"]
+  B --> C["Unified IR"]
+  C --> D["Event signal normalizer"]
+  D --> E["Generic + project profiles"]
+  E --> F["Episode analysis"]
+  C --> G["Label extractor"]
+  G --> H["Aggregation + anomaly detection"]
+  F --> I["Report delivery layer"]
+  H --> I
+  I --> J["report.html"]
+  I --> K["report.md"]
+  I --> L[".analysis-profile.json"]
 ```
 
 The extractor uses **28 labels** across degradation, activation, waste, and
@@ -122,6 +140,18 @@ Output files:
 | `report.html` | Human reader | Visual diagnosis, readable labels, risks, capability matrix, and consulting routes |
 | `report.md` | Human / agent deep read | Evidence-rich report with anomaly fragments and Section VII diagnoses |
 | `.analysis-profile.json` | Agent runtime | Structured `state / trace / guide`, including `consulting_routes` and `consulting_output` contracts |
+
+## Example Report
+
+The repository includes a synthetic, privacy-safe demo workflow:
+
+- [Demo Report workflow](https://github.com/HaipingShi/vibecoding-observer/actions/workflows/demo-report.yml)
+- It generates `report.html` and `report.md` from test fixture sessions.
+- It uploads the generated files as a GitHub Actions artifact.
+- When the workflow is manually run with `publish_pages=true` and GitHub Pages
+  is configured for Actions, it also publishes the demo report as a Pages site.
+
+No real Claude Code or Codex user logs are committed or uploaded by this demo.
 
 Need custom paths:
 
@@ -326,6 +356,22 @@ Extractor：28 labels，来自封闭诊断维度
 report.html + report.md + .analysis-profile.json
 ```
 
+```mermaid
+flowchart LR
+  A["Claude Code / Codex 本地日志"] --> B["Adapters"]
+  B --> C["统一 IR"]
+  C --> D["事件信号归一化"]
+  D --> E["Generic + 项目 profile"]
+  E --> F["Episode 分析"]
+  C --> G["标签抽取"]
+  G --> H["聚合 + 异常检测"]
+  F --> I["报告交付层"]
+  H --> I
+  I --> J["report.html"]
+  I --> K["report.md"]
+  I --> L[".analysis-profile.json"]
+```
+
 这 28 labels 是封闭诊断标签，覆盖退化、激活、浪费和效率信号。它们不是自由文本模型判断，也不是“28 种退化模式”。
 
 诊断管线本地优先：无运行时依赖、不上传网络、不在管线内部调用 LLM。调用它的 AI agent 可以读取报告，再做更高层解释。
@@ -376,6 +422,18 @@ vibecoding-observer --all-history --source all --output ./my-report
 | `report.html` | 用户 | 可视化诊断报告，解释标签、风险、能力矩阵和咨询路线 |
 | `report.md` | 用户 / agent 深读 | 含异常片段、Section VII 诊断建议和可引用证据 |
 | `.analysis-profile.json` | agent 运行态 | 结构化 `state / trace / guide`，包含 `consulting_routes` 和 `consulting_output` 契约 |
+
+## 示例报告
+
+仓库包含一个使用合成 fixture 的安全 demo workflow：
+
+- [Demo Report workflow](https://github.com/HaipingShi/vibecoding-observer/actions/workflows/demo-report.yml)
+- 它从测试 fixture 会话生成 `report.html` 和 `report.md`。
+- 默认把生成文件上传为 GitHub Actions artifact。
+- 手动运行时如果设置 `publish_pages=true`，且仓库 Pages 已配置为 GitHub Actions，
+  也可以发布为在线 demo 页面。
+
+这个 demo 不提交、不上传真实 Claude Code 或 Codex 用户日志。
 
 自定义会话路径：
 

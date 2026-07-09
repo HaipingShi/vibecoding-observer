@@ -1,0 +1,75 @@
+name: Demo Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_pages:
+        description: "Publish demo report to GitHub Pages after generating the artifact"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    - cron: "20 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  build-demo-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Generate demo report from synthetic fixtures
+        run: |
+          uv run vibecoding-observer \
+            --source codex \
+            --all-history \
+            --codex-dir tests/fixtures \
+            --output demo-report
+
+      - name: Prepare demo artifact
+        run: |
+          mkdir -p demo-site
+          cp demo-report/report.html demo-site/index.html
+          cp demo-report/report.md demo-site/report.md
+
+      - name: Upload demo report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibecoding-observer-demo-report
+          path: demo-site
+          retention-days: 30
+
+      - name: Upload Pages artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_pages == 'true' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo-site
+
+  publish-demo-pages:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_pages == 'true' }}
+    needs: build-demo-report
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy demo report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
