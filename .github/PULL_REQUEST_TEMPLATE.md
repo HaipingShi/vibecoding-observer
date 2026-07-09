@@ -17,10 +17,12 @@
 - [ ] `uv run pytest`
 - [ ] `uv build` if package metadata or README changed
 - [ ] `bash scripts/run_e2e.sh /tmp/vibecoding_observer_e2e` if adapters, reports, profile output, or CLI behavior changed
+- [ ] `docs/RELEASE_CHECKLIST.md` reviewed if packaging, release metadata, CLI names, or generated output paths changed
 
 ## Privacy and Safety
 
 - [ ] I did not commit `report.html`, `report.md`, `.analysis-profile.json`, or generated local reports.
+- [ ] I did not commit `.agent/`, `.coderail/`, `coderail-output/`, `project-template/`, or other scaffolding/run state.
 - [ ] I did not paste private session logs, secrets, full local paths, or private project code.
 - [ ] I did not add telemetry, uploads, runtime LLM calls, ranking, or heavy runtime dependencies.
 

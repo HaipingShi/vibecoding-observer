@@ -32,6 +32,7 @@ from observer.extractor import extract as extract_labels
 from observer.federator import FederatedProject, federate
 from observer.ir import IREvent
 from observer.reporter import generate_html_report, generate_profile, generate_report
+from observer.signal_config import SignalConfig, load_signal_config
 
 __all__ = ["DiscoveryResult", "OrchestrationResult", "Orchestrator", "discover_sessions"]
 
@@ -71,6 +72,7 @@ class OrchestrationResult:
     anomalies: list[Anomaly]
     aggregator_report: Report
     episodes: list[EpisodeSummary]
+    signal_config: SignalConfig | None = None
 
 
 class Orchestrator:
@@ -112,10 +114,17 @@ class Orchestrator:
 
         events = list(self._collect_events())
         projects = federate(events)
+        signal_configs = {
+            project.cwd: load_signal_config(project.cwd or None)
+            for project in projects
+        }
         episodes = [
             episode
             for project in projects
-            for episode in segment_episodes(project.events)
+            for episode in segment_episodes(
+                project.events,
+                profiles=signal_configs[project.cwd].profiles,
+            )
         ]
         labeled_by_project: list[tuple[str, list[LabeledEvent]]] = [
             (p.project, extract_labels(p.events)) for p in projects
@@ -136,6 +145,7 @@ class Orchestrator:
                 git_metrics = analyze_git(
                     top_project.cwd, interaction_count=len(top_project.events)
                 )
+        top_signal_config = signal_configs.get(top_project.cwd) if top_project else None
 
         # Run diagnostic engine once with representative project + git + global report.
         engine = DiagnosticEngine()
@@ -159,6 +169,7 @@ class Orchestrator:
             agg_report, anomalies,
             diagnoses=unique_diagnoses or None,
             episodes=episodes,
+            signal_config=top_signal_config.to_dict() if top_signal_config else None,
         )
         report_html = generate_html_report(profile)
         if self.output_dir:
@@ -171,6 +182,7 @@ class Orchestrator:
             anomalies=anomalies,
             aggregator_report=agg_report,
             episodes=episodes,
+            signal_config=top_signal_config,
         )
 
     def _collect_events(self) -> list[IREvent]:

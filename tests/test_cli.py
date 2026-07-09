@@ -71,14 +71,14 @@ class TestOrchestrator:
         assert result.profile["episode_summary"]["goal_quality_counts"] == {"task_like": 1}
         assert result.profile["episode_summary"]["goal_extraction_counts"] == {"raw_goal": 1}
         assert result.profile["episode_summary"]["diagnostic_signal_counts"] == {
-            "verified_but_unclosed": 1,
+            "implementation_without_verification": 1,
         }
         assert result.profile["episodes"][0]["goal"] == "请实现导出功能，必须有 pytest"
         assert result.profile["episodes"][0]["goal_quality"] == "task_like"
         assert result.profile["episodes"][0]["normalized_goal"] == "请实现导出功能，必须有 pytest"
         assert result.profile["episodes"][0]["goal_extraction_method"] == "raw_goal"
         assert result.profile["episodes"][0]["diagnostic_signals"] == [
-            "verified_but_unclosed"
+            "implementation_without_verification"
         ]
         assert any(
             route["title"] == "补齐验证和交付闭环"

@@ -6,7 +6,12 @@ Real component tests arrive with their respective tasks (T-002 onward).
 
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import observer
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_package_importable() -> None:
@@ -30,12 +35,13 @@ def test_all_exports_are_valid() -> None:
         assert hasattr(observer, name), f"__all__ lists {name!r} but it is missing"
 
 
-def test_agentlens_compat_alias() -> None:
-    """The old import package remains available as a compatibility alias."""
-    import agentlens
-    import agentlens.orchestrator
-    import observer.orchestrator
+def test_distribution_exposes_only_canonical_cli() -> None:
+    """The deprecated agentlens name must not be published as this CLI."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
-    assert agentlens.__version__ == observer.__version__
-    assert agentlens.IREvent is observer.IREvent
-    assert agentlens.orchestrator is observer.orchestrator
+    assert pyproject["project"]["scripts"] == {
+        "vibecoding-observer": "observer.cli:main",
+    }
+    assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == [
+        "src/observer",
+    ]

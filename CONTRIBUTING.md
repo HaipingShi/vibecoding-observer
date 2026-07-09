@@ -48,14 +48,14 @@ testing, linting, and type checking.
 
 ```text
 src/observer/       # canonical implementation package
-src/agentlens/      # compatibility alias for older imports
 tests/              # pytest suite
 docs/               # public profile contract and consulting output examples
 scripts/            # e2e helper
 ```
 
-New code should import `observer`. Keep `agentlens` compatibility working until
-a future release explicitly removes it.
+New code should import `observer`. Do not add new `agentlens` imports, docs, or
+CLI paths; that old name is deprecated and not a supported install target for
+this project.
 
 ## Contribution Rules
 
@@ -71,6 +71,8 @@ Before opening a pull request:
    false positives.
 6. If you change `.analysis-profile.json`, update
    `docs/PROFILE_CONTRACT.md` and related tests.
+7. If you change packaging, release metadata, CLI names, or generated output
+   paths, check `docs/RELEASE_CHECKLIST.md`.
 
 ## Adding an Agent Adapter
 

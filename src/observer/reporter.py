@@ -9,6 +9,7 @@ and produces insights. No separate LLM analyzer module needed.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 from html import escape
 from typing import Any
 
@@ -251,10 +252,13 @@ def _section_diagnoses(diagnoses: list[Diagnosis]) -> str:
         lines.append(f"### {icon} 诊断 {i}: {d.title}")
         lines.append("")
         lines.append(f"**严重度**: {d.severity}")
+        lines.append(f"**置信度**: {d.confidence}")
         lines.append(f"**根因**: {d.root_cause}")
         lines.append(f"**建议**: {d.recommendation}")
         if d.signals:
             lines.append(f"**信号**: {', '.join(d.signals)}")
+        if d.uncertainty_reasons:
+            lines.append(f"**不确定性**: {', '.join(d.uncertainty_reasons)}")
         lines.append("")
 
     return "\n".join(lines)
@@ -265,6 +269,7 @@ def generate_profile(
     anomalies: list[Anomaly],
     diagnoses: list[Diagnosis] | None = None,
     episodes: list[EpisodeSummary] | None = None,
+    signal_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate the machine-readable profile for Phase B consumption."""
     profile: dict[str, Any] = {
@@ -283,7 +288,7 @@ def generate_profile(
             {"project": p, "degenerate": d}
             for p, d in report.top_degenerate_projects[:10]
         ],
-        "effective_activations": _effective_activation_signatures(report),
+        "effective_activations": _effective_activation_signatures(report, episodes or []),
         "anomalies": [
             {
                 "kind": a.kind,
@@ -303,15 +308,22 @@ def generate_profile(
         ],
     }
 
+    if signal_config:
+        profile["signal_profile"] = signal_config
+
     if episodes is not None:
-        profile["episode_summary"] = _episode_summary(episodes)
+        emitted_episodes = sorted(
+            episodes,
+            key=lambda e: (_goal_quality_rank(e), e.event_count),
+            reverse=True,
+        )[:50]
+        profile["episode_summary"] = _episode_summary(
+            emitted_episodes,
+            analyzed_total=len(episodes),
+        )
         profile["episodes"] = [
             ep.to_dict()
-            for ep in sorted(
-                episodes,
-                key=lambda e: (_goal_quality_rank(e), e.event_count),
-                reverse=True,
-            )[:50]
+            for ep in emitted_episodes
         ]
 
     if diagnoses:
@@ -322,6 +334,8 @@ def generate_profile(
                 "root_cause": d.root_cause,
                 "recommendation": d.recommendation,
                 "signals": d.signals,
+                "confidence": d.confidence,
+                "uncertainty_reasons": d.uncertainty_reasons,
             }
             for d in diagnoses
         ]
@@ -347,6 +361,8 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     goal_counts = _as_dict(episode_summary.get("goal_quality_counts"))
     signal_counts = _as_dict(episode_summary.get("diagnostic_signal_counts"))
     episode_total = _as_int(episode_summary.get("total"))
+    analyzed_episode_total = _as_int(episode_summary.get("analyzed_total"))
+    signal_profile = _as_dict(profile.get("signal_profile"))
     label_counts = _as_dict(profile.get("label_distribution"))
     label_rows = sorted(
         (
@@ -376,21 +392,18 @@ def generate_html_report(profile: dict[str, Any]) -> str:
         for item in diagnoses[:5]
         if isinstance(item, dict)
     )
-    closed_verified = _as_int(loop_counts.get("closed_verified"))
+    signal_profile_risk = _html_signal_profile_risk(signal_profile)
+    closed_verified = (
+        _as_int(loop_counts.get("closed_verified"))
+        + _as_int(loop_counts.get("implementation_closed"))
+        + _as_int(loop_counts.get("design_closed"))
+    )
     goal_only = _as_int(loop_counts.get("goal_only"))
     closed_rate = (closed_verified / episode_total * 100) if episode_total else 0.0
     goal_only_rate = (goal_only / episode_total * 100) if episode_total else 0.0
     weak_goal = _as_int(signal_counts.get("weak_goal"))
     unusable_goal = _as_int(signal_counts.get("unusable_goal"))
     top_goal_gap = _as_int(signal_counts.get("top_level_goal_without_engineering_loop"))
-    persona_strip = _html_persona_strip(
-        weak_goal=weak_goal,
-        unusable_goal=unusable_goal,
-        goal_only=goal_only,
-        top_goal_gap=top_goal_gap,
-        closed_rate=closed_rate,
-        verify_count=_as_int(label_counts.get("eng-verify")),
-    )
     capability_rows = [
         ("验证意识", 78, "经常出现主动验证和对比证伪信号", "把验证转成完成定义。"),
         ("约束反推", 68, "用户会要求先判断问题边界和硬约束", "任务开头固定约束和禁止范围。"),
@@ -414,6 +427,38 @@ def generate_html_report(profile: dict[str, Any]) -> str:
         ),
         ("抽象判断", 70, "存在抽象层级和数据生命周期相关信号", "动手前先做问题层级判断。"),
     ]
+    avatar_seed = f"{developer_type}:{total_events}:{total_projects}:{closed_rate:.1f}"
+    avatar_mood = _avatar_mood(diagnoses, closed_rate)
+    report_avatar = _pet_avatar_svg(
+        avatar_seed,
+        mood=avatar_mood,
+        size=112,
+        title="你的诊断宠物头像",
+    )
+    portrait_html = _html_delivery_portrait(
+        developer_type=developer_type,
+        closed_rate=closed_rate,
+        verify_count=_as_int(label_counts.get("eng-verify")),
+        total_events=total_events,
+    )
+    conclusion_html = _html_delivery_conclusion(
+        label_counts=label_counts,
+        signal_counts=signal_counts,
+        closed_rate=closed_rate,
+    )
+    strengths_html = _html_delivery_strengths(
+        label_counts=label_counts,
+        closed_rate=closed_rate,
+        closed_verified=closed_verified,
+        episode_total=episode_total,
+    )
+    problem_cards = _html_delivery_problem_cards(
+        label_counts=label_counts,
+        signal_counts=signal_counts,
+        loop_counts=loop_counts,
+        closed_rate=closed_rate,
+    )
+    priority_actions = _html_priority_actions(signal_counts=signal_counts)
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -430,8 +475,13 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     * {{ box-sizing:border-box; }}
     body {{ margin:0; overflow-x:hidden; background:var(--bg); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.55; }}
     header {{ background:#111827; color:#fff; padding:30px 32px 26px; }}
+    .hero {{ display:flex; gap:20px; align-items:center; max-width:1180px; }}
+    .hero-copy {{ min-width:0; }}
     header h1 {{ margin:0 0 8px; font-size:clamp(28px,4vw,46px); line-height:1.08; letter-spacing:0; }}
     header p {{ margin:0; max-width:980px; color:#cbd5e1; }}
+    .pet-avatar {{ flex:0 0 auto; width:112px; height:112px; filter:drop-shadow(6px 8px 0 rgba(0,0,0,.28)); }}
+    .pet-avatar svg,.mini-pet svg {{ display:block; width:100%; height:100%; }}
+    .mini-pet {{ float:right; width:54px; height:54px; margin:0 0 8px 10px; }}
     nav {{ position:sticky; top:0; z-index:5; overflow-x:auto; white-space:nowrap; background:rgba(255,255,255,.94); border-bottom:1px solid var(--line); padding:10px 24px; }}
     nav a {{ display:inline-flex; color:#344054; text-decoration:none; padding:7px 10px; border-radius:6px; font-size:14px; }}
     nav a:hover {{ background:#eef4ff; color:var(--brand); }}
@@ -478,6 +528,24 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     .score.good {{ background:var(--good); }} .score.mid {{ background:var(--warn); }} .score.low {{ background:var(--risk); }}
     .diagnosis {{ border-left:4px solid var(--warn); padding-left:12px; margin-bottom:16px; }}
     .diagnosis strong {{ display:block; margin-bottom:4px; }}
+    .plain-card {{ border-left:4px solid var(--brand); }}
+    .plain-card p {{ margin:6px 0 0; }}
+    .portrait {{ border:2px solid #17202a; background:#fffdf7; box-shadow:6px 6px 0 #17202a; }}
+    .portrait p {{ margin:8px 0 0; font-size:16px; color:#344054; }}
+    .conclusion {{ border-left:5px solid var(--brand); font-size:18px; }}
+    .strength-card {{ border-left:4px solid var(--good); }}
+    .problem-card {{ border-left:4px solid var(--risk); }}
+    .problem-card h3 {{ font-size:18px; }}
+    .problem-block {{ margin-top:12px; }}
+    .problem-block strong {{ display:block; margin-bottom:4px; color:#17202a; }}
+    .prompt-template {{ margin-top:10px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#f8fafc; color:#17202a; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }}
+    .priority-list {{ display:grid; gap:12px; padding-left:0; list-style:none; }}
+    .priority-list li {{ background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px; }}
+    .appendix {{ background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px; }}
+    .appendix summary {{ cursor:pointer; font-weight:720; font-size:18px; }}
+    .scenario-card h3 {{ margin-bottom:6px; }}
+    .scenario-card p {{ margin:6px 0; color:#344054; }}
+    .next-action {{ margin-top:10px; border-top:1px solid var(--line); padding-top:10px; font-weight:680; color:#17202a; }}
     .signal-list {{ margin:8px 0 0; padding-left:18px; color:#475467; font-size:13px; }}
     .signal-list li {{ margin-bottom:4px; }}
     .signal-raw {{ margin-top:8px; color:var(--muted); font-size:12px; }}
@@ -489,95 +557,78 @@ def generate_html_report(profile: dict[str, Any]) -> str:
     .callout {{ border:1px solid #b8d4ff; background:#eef6ff; border-radius:8px; padding:16px; }}
     .footer {{ color:var(--muted); font-size:12px; padding-top:18px; border-top:1px solid var(--line); }}
     @media (max-width:1100px) {{ .kpi,.routes,.three,.four {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
-    @media (max-width:760px) {{ header {{ padding:24px 18px; }} nav {{ padding:8px 12px; }} nav a {{ font-size:13px; }} main {{ padding:22px 14px 36px; }} .panel {{ padding:14px; }} .persona-strip {{ box-shadow:4px 4px 0 #17202a; }} .persona-card {{ min-height:auto; }} .kpi,.two,.three,.four,.routes {{ grid-template-columns:1fr; }} .bar-row {{ grid-template-columns:1fr auto; gap:6px 10px; }} .bar-label {{ grid-column:1 / -1; }} .bar-track {{ grid-column:1; }} .bar-value {{ grid-column:2; }} .route-card {{ min-height:auto; }} .matrix th,.matrix td {{ padding:8px 6px; font-size:12px; }} }}
+    @media (max-width:760px) {{ header {{ padding:24px 18px; }} .hero {{ align-items:flex-start; }} .pet-avatar {{ width:76px; height:76px; }} nav {{ padding:8px 12px; }} nav a {{ font-size:13px; }} main {{ padding:22px 14px 36px; }} .panel {{ padding:14px; }} .persona-strip {{ box-shadow:4px 4px 0 #17202a; }} .persona-card {{ min-height:auto; }} .kpi,.two,.three,.four,.routes {{ grid-template-columns:1fr; }} .bar-row {{ grid-template-columns:1fr auto; gap:6px 10px; }} .bar-label {{ grid-column:1 / -1; }} .bar-track {{ grid-column:1; }} .bar-value {{ grid-column:2; }} .route-card {{ min-height:auto; }} .matrix th,.matrix td {{ padding:8px 6px; font-size:12px; }} }}
   </style>
 </head>
 <body>
   <header>
-    <h1>VibeCoding Observer 可视化诊断报告</h1>
-    <p>基于 {_fmt(total_projects)} 个项目、{_fmt(total_events)} 条 AI coding agent 交互事件生成。报告目标不是给出分数，而是把 AI 协作方式转成可理解的画像、风险地图和可执行改进路线。</p>
+    <div class="hero">
+      <div class="pet-avatar">{report_avatar}</div>
+      <div class="hero-copy">
+        <h1>VibeCoding Observer 可视化诊断报告</h1>
+        <p>基于 {_fmt(total_projects)} 个项目、{_fmt(total_events)} 条 AI coding agent 交互事件生成。旁边这只代码生成的诊断宠物，会根据本次报告的状态换颜色和表情。</p>
+      </div>
+    </div>
   </header>
   <nav>
-    <a href="#overview">总览</a><a href="#persona">类型速写</a><a href="#profile">协作画像</a><a href="#loop">工程闭环</a><a href="#capability">能力矩阵</a><a href="#risks">风险</a><a href="#routes">咨询路线</a><a href="#actions">行动建议</a>
+    <a href="#portrait">协作画像</a><a href="#conclusion">一句话结论</a><a href="#strengths">做得好的地方</a><a href="#problems">最拖慢你的 3 个问题</a><a href="#actions">优先级行动</a><a href="#appendix">开发者附录</a>
   </nav>
   <main>
-    <section id="overview">
-      <h2>一、总览</h2>
-      <div class="grid kpi">
-        {_html_metric("分析项目", _fmt(total_projects), "多源融合后的项目数")}
-        {_html_metric("交互事件", _fmt(total_events), "本地会话历史，无网络上传")}
-        {_html_metric("任务片段", _fmt(episode_total), "用于判断目标、实现、验证、收束")}
-        {_html_metric("交叉诊断", _fmt(len(diagnoses)), "诊断与建议数量")}
-      </div>
+    <section id="portrait">
+      <h2>你的 vibe coding 协作画像</h2>
+      <div class="panel portrait">{portrait_html}</div>
     </section>
-    <section id="persona" class="panel persona-strip">
-      <h2>二、协作类型速写</h2>
-      <div class="grid four">
-        {persona_strip}
-      </div>
+    <section id="conclusion">
+      <h2>一句话结论</h2>
+      <div class="panel conclusion">{conclusion_html}</div>
     </section>
-    <section id="profile">
-      <h2>三、协作画像</h2>
-      <div class="grid two">
-        <div class="panel">
-          <h3>{escape(developer_type)}</h3>
-          <p>你更像战略型委托者：会用验证、约束和多 agent 协作推进复杂项目，但主要损耗来自高产高纠缠、任务入口不稳和工程闭环不足。</p>
-          {_html_top_tags(label_rows[:5])}
-        </div>
-        <div class="panel">
-          <h3>关键矛盾</h3>
-          <p>你已经具备把 agent 拉回工程判断的能力，但任务入口和收束协议不稳定。大量 episode 有明确目标，却长期停留在讨论或动作展开。</p>
-          <div class="callout"><strong>优先改善：</strong>让每个任务更快从目标进入可验证交付。</div>
-        </div>
-      </div>
+    <section id="strengths">
+      <h2>你做得好的地方</h2>
+      <div class="grid two">{strengths_html}</div>
     </section>
-    <section>
-      <h2>四、标签分布</h2>
-      <div class="grid two">
-        <div class="panel"><h3>Top 标签</h3>{_html_bar_list(label_rows, "bar-fill")}</div>
-        <div class="panel"><h3>目标质量</h3>{_html_bar_list(_dict_rows(goal_counts), "warn-fill")}</div>
-      </div>
-    </section>
-    <section id="loop">
-      <h2>五、工程闭环漏斗</h2>
-      <div class="grid two">
-        <div class="panel">
-          <h3>Loop quality</h3>
-          {_html_bar_list(_dict_rows(loop_counts), "cyan-fill")}
-          <p class="subtle">closed_verified: {closed_rate:.1f}%；goal_only: {goal_only_rate:.1f}%。</p>
-        </div>
-        <div class="panel">
-          <h3>Episode diagnostic signals</h3>
-          {_html_bar_list(_dict_rows(signal_counts)[:8], "risk-fill")}
-        </div>
-      </div>
-    </section>
-    <section id="capability">
-      <h2>六、AI 协作能力矩阵</h2>
-      <div class="panel">{_html_capability_table(capability_rows)}</div>
-    </section>
-    <section id="risks">
-      <h2>七、风险与项目热点</h2>
-      <div class="grid two">
-        <div class="panel"><h3>浪费最严重项目</h3>{_html_bar_list(waste_rows, "bad-fill")}</div>
-        <div class="panel"><h3>退化最严重项目</h3>{_html_bar_list(degenerate_rows, "risk-fill")}</div>
-      </div>
-    </section>
-    <section>
-      <h2>八、诊断摘要</h2>
-      <div class="panel">{diagnosis_items or '<p class="subtle">暂无诊断。</p>'}</div>
-    </section>
-    <section id="routes">
-      <h2>九、动态咨询路线</h2>
-      <div class="grid routes">{route_cards or '<div class="panel">暂无咨询路线。</div>'}</div>
+    <section id="problems">
+      <h2>最拖慢你的 3 个问题</h2>
+      <div class="grid three">{problem_cards}</div>
     </section>
     <section id="actions">
-      <h2>十、下一步改善建议</h2>
-      <div class="grid three">
-        <div class="panel"><h3>立即做：任务入口模板</h3><p>把“继续 / 按你理解 / go”替换为目标、允许范围、禁止范围、验收命令、交付格式。</p></div>
-        <div class="panel"><h3>本周做：工程闭环门禁</h3><p>episode 超过 50 个事件仍未实现或验证时，暂停并重述目标、拆分任务、写 Definition of Done。</p></div>
-        <div class="panel"><h3>本月做：项目约束层</h3><p>为高损耗项目补 AGENTS.md / CLAUDE.md / HANDOFF，减少冷启动退化。</p></div>
-      </div>
+      <h2>优先级行动</h2>
+      {priority_actions}
+    </section>
+    <section id="appendix">
+      <details class="appendix">
+        <summary>开发者附录：内部标签、置信度和原始信号</summary>
+        <div class="grid kpi">
+          {_html_metric("分析项目", _fmt(total_projects), "多源融合后的项目数")}
+          {_html_metric("交互事件", _fmt(total_events), "本地会话历史，无网络上传")}
+          {_html_metric("任务片段", _fmt(episode_total), f"输出片段 / 全量 {_fmt(analyzed_episode_total or episode_total)}")}
+          {_html_metric("交叉诊断", _fmt(len(diagnoses)), "诊断与建议数量")}
+        </div>
+        <div class="grid two">
+          <div class="panel"><h3>Top 标签</h3>{_html_bar_list(label_rows, "bar-fill")}</div>
+          <div class="panel"><h3>目标质量</h3>{_html_bar_list(_dict_rows(goal_counts), "warn-fill")}</div>
+        </div>
+        <div class="grid two">
+          <div class="panel">
+            <h3>工程闭环漏斗</h3>
+            {_html_bar_list(_dict_rows(loop_counts), "cyan-fill")}
+            <p class="subtle">closed/design/implementation: {closed_rate:.1f}%；goal_only: {goal_only_rate:.1f}%。</p>
+          </div>
+          <div class="panel">
+            <h3>Episode diagnostic signals</h3>
+            {_html_bar_list(_dict_rows(signal_counts)[:8], "risk-fill")}
+          </div>
+        </div>
+        <div class="panel"><h3>AI 协作能力矩阵</h3>{_html_capability_table(capability_rows)}</div>
+        <div class="grid two">
+          <div class="panel"><h3>浪费最严重项目</h3>{_html_bar_list(waste_rows, "bad-fill")}</div>
+          <div class="panel"><h3>退化最严重项目</h3>{_html_bar_list(degenerate_rows, "risk-fill")}</div>
+        </div>
+        <div class="grid two">
+          <div class="panel">{diagnosis_items or '<p class="subtle">暂无诊断。</p>'}</div>
+          <div class="panel">{signal_profile_risk}</div>
+        </div>
+        <div class="grid routes">{route_cards or '<div class="panel">暂无咨询路线。</div>'}</div>
+      </details>
     </section>
     <section class="footer">
       <p>本 HTML 由 VibeCoding Observer 从 `.analysis-profile.json` 自动生成，动态路线来自 `consulting_routes`。它是用户侧静态交付物，不包含外部脚本、外部图片或网络请求。</p>
@@ -628,6 +679,7 @@ _LABEL_EXPLANATIONS: dict[str, tuple[str, str]] = {
     "act-scale-stress": ("尺度压力测试", "用户用大规模、极端输入或容量约束测试方案。"),
     "act-ab-falsify": ("对比证伪", "用户要求比较方案、A/B 验证或反例检查。"),
     "act-constraint-reason": ("约束反推", "用户要求先判断问题类型、边界、约束和禁止范围。"),
+    "act-design-closure": ("设计闭环", "架构、ADR、规范、trace 或文档型任务形成可恢复收束。"),
     "act-passive": ("被动放手", "任务入口过短或缺少目标、边界、验收标准。"),
     "waste-restate": ("重复解释", "用户不得不重新说明已经给过的需求。"),
     "waste-rework": ("返工", "完成声明后又被纠正，产生重复实现成本。"),
@@ -642,7 +694,12 @@ _LABEL_EXPLANATIONS: dict[str, tuple[str, str]] = {
     "contextual": ("上下文目标", "需要结合上下文才能判断任务目标。"),
     "goal_only": ("只有目标", "有目标但缺少实现、验证或收束闭环。"),
     "closed_verified": ("验证并收束", "任务完成前有验证证据，也有结束/交付动作。"),
+    "implementation_closed": ("实现已收束", "代码、测试或 runner 修改后有验证和收束证据。"),
+    "design_closed": ("设计已收束", "文档、ADR、trace 或任务状态更新已持久化并收束。"),
+    "verification_only": ("仅验证", "只执行检查或诊断，没有看到持久化修改。"),
+    "blocked_or_handoff": ("阻塞/交接", "有明确阻塞、handoff、resume anchor 或下一步。"),
     "verified_unclosed": ("验证未收束", "有验证证据，但没有明确交付或关闭。"),
+    "implemented_verified_unclosed": ("实现验证未收束", "已有实现和验证，但缺少交付/closeout 证据。"),
     "implemented_unverified": ("实现未验证", "发生了实现动作，但缺少测试/构建/验收。"),
     "unstructured": ("未结构化", "片段无法稳定归入目标、实现、验证、收束。"),
     "long_goal_only_episode": ("长讨论无闭环", "长 episode 停留在目标/讨论，未进入完整工程闭环。"),
@@ -761,6 +818,242 @@ def _html_persona_strip(
     )
 
 
+def _html_delivery_portrait(
+    *,
+    developer_type: str,
+    closed_rate: float,
+    verify_count: int,
+    total_events: int,
+) -> str:
+    return (
+        "<h3>你是强目标驱动的 AI 协作者"
+        f"（{escape(developer_type)}）</h3>"
+        "<p>你不是单纯让 AI 代写代码，而是在用 AI 推进复杂项目：会要求验证，"
+        "也会用架构、文档和任务状态来收束工作。</p>"
+        f"<p>这份报告读取了 {_fmt(total_events)} 条本地协作事件。"
+        f"其中 {_fmt(verify_count)} 个验证信号说明你已经有工程验收意识；"
+        f"{closed_rate:.1f}% 的输出任务带有收束证据，说明你的问题不是“不会用 AI”，"
+        "而是某些任务入口和工作流还会制造额外拉扯。</p>"
+    )
+
+
+def _html_delivery_conclusion(
+    *,
+    label_counts: dict[str, Any],
+    signal_counts: dict[str, Any],
+    closed_rate: float,
+) -> str:
+    weak = _as_int(signal_counts.get("weak_goal")) + _as_int(signal_counts.get("unusable_goal"))
+    wrong_layer = _as_int(label_counts.get("degen-wrong-layer"))
+    if weak >= wrong_layer:
+        friction = "任务入口太省字，目标、边界和验收没有在第一轮说清楚"
+        symptom = "AI 需要猜你的真实意图，后面再靠你纠偏"
+    else:
+        friction = "抽象层级没有先对齐，你聊的是方向，AI 却急着进入局部实现"
+        symptom = "对话中途才发现方向错了"
+    return (
+        "你已经能让 AI 产出代码，但主要损耗发生在 "
+        f"<strong>{escape(friction)}</strong>，所以经常出现 "
+        f"<strong>{escape(symptom)}</strong>。"
+        f"当前可识别的任务收束率约 {closed_rate:.1f}%，这个数字表示："
+        "不少任务最后能收住，但收住之前的沟通成本还可以继续降。"
+    )
+
+
+def _html_delivery_strengths(
+    *,
+    label_counts: dict[str, Any],
+    closed_rate: float,
+    closed_verified: int,
+    episode_total: int,
+) -> str:
+    verify_count = _as_int(label_counts.get("eng-verify"))
+    constraint_count = _as_int(label_counts.get("act-constraint-reason"))
+    cards = [
+        (
+            "你会要求 AI 验证结果",
+            f"报告看到 {_fmt(verify_count)} 个验证信号。这个数字的意思是：你不是只看 AI 说“完成了”，而是会让它跑测试、检查或给出验收证据。",
+            "这是优势，因为验证习惯会把“看起来能跑”变成“我知道它为什么能交付”。",
+        ),
+        (
+            "你有把任务拉回工程边界的意识",
+            f"报告看到 {_fmt(constraint_count)} 个约束反推信号；另有 {_fmt(closed_verified)} / {_fmt(episode_total)} 个输出片段带有可识别收束证据。",
+            "这是优势，因为你已经在用边界、验收和收束来管理 AI，而不是完全把判断权交给它。",
+        ),
+    ]
+    return "".join(
+        '<div class="panel strength-card">'
+        f"<h3>{escape(title)}</h3>"
+        f"<p><strong>行为：</strong>{escape(behavior)}</p>"
+        f"<p><strong>为什么是优势：</strong>{escape(why)}</p>"
+        f'<p class="subtle">任务收束率约 {closed_rate:.1f}%，口径是已验证/设计/实现闭环任务占输出任务的比例。</p>'
+        "</div>"
+        for title, behavior, why in cards
+    )
+
+
+def _html_delivery_problem_cards(
+    *,
+    label_counts: dict[str, Any],
+    signal_counts: dict[str, Any],
+    loop_counts: dict[str, Any],
+    closed_rate: float,
+) -> str:
+    weak_count = _as_int(signal_counts.get("weak_goal")) + _as_int(signal_counts.get("unusable_goal"))
+    wrong_layer = _as_int(label_counts.get("degen-wrong-layer"))
+    passive = _as_int(label_counts.get("act-passive"))
+    direction = _as_int(label_counts.get("waste-direction"))
+    unverified = _as_int(signal_counts.get("implementation_without_verification"))
+    unclosed = _as_int(signal_counts.get("verified_but_unclosed"))
+    goal_only = _as_int(loop_counts.get("goal_only"))
+    candidates = [
+        (
+            weak_count,
+            "问题 1：任务入口太省字",
+            "你可能只说“继续”“按你的理解推进”，或者贴一段上下文就让 AI 开始做。",
+            f"报告看到 {_fmt(weak_count)} 个弱目标或不可用目标信号。它意味着：AI 收到任务时，目标、边界或验收方式不够完整。",
+            "你为了省第一轮说明，把判断压力转移给了 AI；AI 会用自己的默认路径补全缺失信息。",
+            "方向猜错后，后续代码、文档或验证都会跟着偏，最后靠你多轮纠正把它拉回来。",
+            "请先复述我的目标，再开始做。\n目标：...\n允许范围：...\n禁止范围：...\n验收方式：...\n交付格式：先列计划，再改文件，最后报告验证结果。",
+        ),
+        (
+            wrong_layer + direction,
+            "问题 2：你聊的是方向，AI 有时急着动手",
+            "你想讨论架构、判断标准或策略，AI 却直接开始改代码或给局部方案。",
+            f"报告看到 {_fmt(wrong_layer)} 个抽象层级误判信号、{_fmt(direction)} 个方向纠偏信号。它意味着：对话里存在“先走错层，再纠正”的成本。",
+            "AI 默认喜欢把模糊问题降级成可执行动作；如果你没先要求它判断层级，它会过早进入实现。",
+            "这会造成返工、方案反复，以及本来应该先定原则的问题被写成局部补丁。",
+            "先不要改文件。\n请先回答：这是设计层、实现层、验证层还是交接层的问题？\n给出 2 个可选路径、各自风险、推荐路径。\n我确认后再执行。",
+        ),
+        (
+            passive,
+            "问题 3：你有时把决策权交给 AI",
+            "你可能会说“按你的建议做”“你看着办”。这能快速推进，但也让 AI 继承了太多隐含决策。",
+            f"报告看到 {_fmt(passive)} 个被动放手信号。它意味着：某些关键约束没有由你明确声明。",
+            "AI 会把“没有说清楚”理解成“可以自由选择”，而它的选择未必符合你的项目边界。",
+            "短期看更快，长期会增加返工和方向偏移，尤其在架构、规范和数据边界任务里。",
+            "你可以提方案，但不要直接执行。\n我的不可变约束是：...\n你必须列出：推荐方案、替代方案、为什么不选替代方案。\n等我确认后再改。",
+        ),
+        (
+            unverified + unclosed + goal_only,
+            "问题 4：部分任务没有形成可恢复收尾",
+            "任务做了很多动作，但最后没有清楚留下“改了什么、怎么验证、下一步是什么”。",
+            f"报告看到 {_fmt(unverified + unclosed)} 个验证/收束缺口信号；当前任务收束率约 {closed_rate:.1f}%。",
+            "当完成定义没有提前写出来，AI 容易把“我做过了”当成“可以交付了”。",
+            "下次恢复任务时，你需要重新判断状态；多人或多 agent 协作时尤其容易丢上下文。",
+            "完成前必须输出 closeout：\n1. 改了什么\n2. 运行了什么验证命令\n3. 结果是什么\n4. 还没做什么\n5. 下一步接手人应该从哪里继续",
+        ),
+    ]
+    selected = sorted(candidates, key=lambda item: item[0], reverse=True)[:3]
+    return "".join(
+        '<div class="panel problem-card">'
+        f"<h3>{escape(title)}</h3>"
+        f'<div class="problem-block"><strong>你可能遇到的场景：</strong><p>{escape(scene)}</p></div>'
+        f'<div class="problem-block"><strong>报告看到的证据：</strong><p>{escape(evidence)}</p></div>'
+        f'<div class="problem-block"><strong>为什么会这样：</strong><p>{escape(reason)}</p></div>'
+        f'<div class="problem-block"><strong>它造成的损耗：</strong><p>{escape(loss)}</p></div>'
+        f'<div class="problem-block"><strong>下次这样改：</strong><pre class="prompt-template">{escape(prompt)}</pre></div>'
+        "</div>"
+        for _, title, scene, evidence, reason, loss, prompt in selected
+    )
+
+
+def _html_priority_actions(*, signal_counts: dict[str, Any]) -> str:
+    weak_count = _as_int(signal_counts.get("weak_goal")) + _as_int(signal_counts.get("unusable_goal"))
+    return (
+        '<ol class="priority-list">'
+        "<li><strong>下一次对话就改：</strong>不要再只说“继续”。直接使用“目标 / 允许范围 / 禁止范围 / 验收方式 / 交付格式”五行模板。"
+        f"这条建议绑定到 {_fmt(weak_count)} 个弱目标或不可用目标信号。</li>"
+        "<li><strong>本周固定成流程：</strong>每个任务开始前先让 AI 判断层级：设计、实现、验证还是交接；确认后再允许它改文件。</li>"
+        "<li><strong>之后沉淀成项目规范：</strong>把 closeout 模板写进 AGENTS.md 或 observer.yaml，让每次交付都留下验证命令、结果、未完成项和下一步。</li>"
+        "</ol>"
+    )
+
+
+def _html_plain_language_summary(
+    *,
+    total_events: int,
+    weak_goal: int,
+    closed_rate: float,
+    verify_count: int,
+    top_label: str,
+) -> str:
+    top_title = _LABEL_EXPLANATIONS.get(top_label, (top_label or "暂无高频标签", ""))[0]
+    cards = [
+        (
+            "这份报告在说什么",
+            f"它看了 {_fmt(total_events)} 条本地 AI 编程对话，不评价你写得好不好，只找协作里反复出现的卡点。",
+        ),
+        (
+            "你已经做得不错的地方",
+            f"你经常让 AI 跑测试或检查，这是好习惯。本次识别到 {_fmt(verify_count)} 个验证信号，任务验证收束率约 {closed_rate:.1f}%。",
+        ),
+        (
+            "最值得先看的问题",
+            f"高频信号是“{top_title}”。如果你只改一件事，先把“继续”改成“目标 + 边界 + 验收”；弱目标信号有 {_fmt(weak_goal)} 次。",
+        ),
+    ]
+    return "".join(
+        '<div class="panel plain-card">'
+        f"<h3>{escape(title)}</h3>"
+        f"<p>{escape(body)}</p>"
+        "</div>"
+        for title, body in cards
+    )
+
+
+def _html_scenario_cards(
+    *,
+    label_counts: dict[str, Any],
+    signal_counts: dict[str, Any],
+    closed_rate: float,
+) -> str:
+    candidates = [
+        (
+            _as_int(label_counts.get("act-passive")),
+            "你把决策权交给 AI",
+            "你可能经常说“按你的建议做”或“你看着办”。这很快，但 AI 会把缺失的边界自己补上。",
+            "下次可以这样改：先写一句不可变约束，再让 AI 给方案。",
+        ),
+        (
+            _as_int(label_counts.get("degen-wrong-layer")),
+            "你聊的是架构，AI 却开始改代码",
+            "你想讨论方向、抽象或判断标准，AI 却把它当成局部实现任务处理，导致你后来纠偏。",
+            "下次可以这样改：先要求它回答“这是设计层、实现层还是验证层”。",
+        ),
+        (
+            _as_int(label_counts.get("waste-direction")),
+            "聊了几轮才发现方向错了",
+            "对话里出现方向级纠偏，说明 agent 很早就走偏，但直到中途才暴露。",
+            "下次可以这样改：前 2 轮只做目标复述和方案对比，不急着改文件。",
+        ),
+        (
+            _as_int(label_counts.get("eng-verify")),
+            "你有验证习惯，这是优势",
+            f"报告看到你会让 AI 做测试、构建或检查。当前验证收束率约 {closed_rate:.1f}%。",
+            "下次可以这样改：把验证命令写进任务开头，而不是做到最后再补。",
+        ),
+        (
+            _as_int(signal_counts.get("weak_goal")) + _as_int(signal_counts.get("unusable_goal")),
+            "任务入口太省字",
+            "“继续”“按你的理解推进”这类入口很省力，但会让 AI 猜目标、猜边界、猜验收。",
+            "下次可以这样改：每次开头写目标、允许范围、禁止范围、验收命令。",
+        ),
+    ]
+    selected = sorted(candidates, key=lambda item: item[0], reverse=True)[:3]
+    if not any(count > 0 for count, *_ in selected):
+        selected = candidates[2:5]
+    return "".join(
+        '<div class="panel scenario-card">'
+        f"<h3>{escape(title)}</h3>"
+        f"<p>{escape(body)}</p>"
+        f'<div class="subtle">识别次数：{_fmt(count)}</div>'
+        f'<div class="next-action">{escape(action)}</div>'
+        "</div>"
+        for count, title, body, action in selected
+    )
+
+
 def _html_top_tags(rows: list[tuple[str, int]]) -> str:
     if not rows:
         return ""
@@ -823,15 +1116,265 @@ def _html_capability_table(rows: list[tuple[str, int, str, str]]) -> str:
     )
 
 
+def _avatar_mood(diagnoses: list[Any], closed_rate: float) -> str:
+    severities = {
+        str(item.get("severity", ""))
+        for item in diagnoses
+        if isinstance(item, dict)
+    }
+    if "critical" in severities:
+        return "alert"
+    if "warning" in severities:
+        return "focused"
+    if closed_rate >= 75:
+        return "happy"
+    return "curious"
+
+
+def _pet_avatar_svg(seed: str, *, mood: str, size: int, title: str) -> str:
+    digest = hashlib.sha256(seed.encode("utf-8")).digest()
+    palette = [
+        ("#7dd3fc", "#0e7490", "#fef3c7", "#ecfeff"),
+        ("#86efac", "#166534", "#dcfce7", "#f0fdf4"),
+        ("#f9a8d4", "#9d174d", "#ffe4e6", "#fff1f2"),
+        ("#c4b5fd", "#5b21b6", "#ede9fe", "#faf5ff"),
+        ("#fdba74", "#9a3412", "#ffedd5", "#fff7ed"),
+    ]
+    body, ink, accent, background = palette[digest[0] % len(palette)]
+    cells = _pixel_pet_cells(digest=digest, mood=mood)
+    pixels = _pixel_cells_svg(cells, body=body, ink=ink, accent=accent)
+    return (
+        f'<svg class="pet-svg" viewBox="0 0 104 104" width="{size}" height="{size}" '
+        'role="img" aria-label="代码生成的诊断宠物头像">'
+        f"<title>{escape(title)}</title>"
+        f'<rect x="8" y="8" width="88" height="88" rx="10" fill="{background}" stroke="#17202a" stroke-width="4"/>'
+        '<g shape-rendering="crispEdges">'
+        f"{pixels}"
+        "</g>"
+        "</svg>"
+    )
+
+
+def _pixel_pet_cells(*, digest: bytes, mood: str) -> dict[tuple[int, int], str]:
+    cells: dict[tuple[int, int], str] = {}
+
+    def add(points: set[tuple[int, int]], token: str) -> None:
+        for point in points:
+            cells[point] = token
+
+    body = {
+        (x, y)
+        for y, row in enumerate(
+            [
+                "00111100",
+                "01111110",
+                "11111111",
+                "11111111",
+                "11111111",
+                "01111110",
+                "00111100",
+                "00011000",
+            ],
+            start=2,
+        )
+        for x, value in enumerate(row, start=2)
+        if value == "1"
+    }
+    add(body, "body")
+
+    ear_variant = digest[1] % 3
+    if ear_variant == 0:
+        add({(3, 1), (4, 1), (9, 1), (10, 1), (2, 2), (11, 2)}, "body")
+    elif ear_variant == 1:
+        add({(2, 2), (3, 1), (4, 2), (9, 2), (10, 1), (11, 2)}, "accent")
+    else:
+        add({(2, 3), (2, 2), (3, 2), (11, 3), (11, 2), (10, 2)}, "body")
+
+    add({(3, 2), (4, 2), (9, 2), (10, 2)}, "outline")
+    add(_pixel_eye_cells(mood), "ink")
+    add(_pixel_mouth_cells(mood), "ink")
+
+    spot_column = 4 + digest[2] % 6
+    spot_row = 3 + digest[3] % 3
+    add({(spot_column, spot_row), (spot_column + 1, spot_row)}, "accent")
+    add(_pixel_badge_cells(mood), "accent")
+    add(_pixel_badge_mark_cells(mood), "ink")
+    return cells
+
+
+def _pixel_eye_cells(mood: str) -> set[tuple[int, int]]:
+    if mood == "alert":
+        return {(4, 5), (5, 6), (8, 6), (9, 5)}
+    if mood == "happy":
+        return {(4, 5), (5, 5), (8, 5), (9, 5), (5, 4), (8, 4)}
+    if mood == "focused":
+        return {(4, 5), (5, 5), (8, 5), (9, 5), (4, 6), (5, 6), (8, 6), (9, 6)}
+    return {(4, 5), (5, 5), (8, 5), (9, 5)}
+
+
+def _pixel_mouth_cells(mood: str) -> set[tuple[int, int]]:
+    if mood == "alert":
+        return {(6, 8), (7, 8), (5, 9), (8, 9)}
+    if mood == "focused":
+        return {(5, 8), (6, 8), (7, 8), (8, 8)}
+    if mood == "happy":
+        return {(5, 8), (8, 8), (6, 9), (7, 9)}
+    return {(6, 8), (7, 8), (7, 9)}
+
+
+def _pixel_badge_cells(mood: str) -> set[tuple[int, int]]:
+    if mood == "alert":
+        return {(10, 9), (11, 9), (10, 10), (11, 10)}
+    if mood == "focused":
+        return {(9, 9), (10, 9), (11, 9), (10, 10), (11, 10)}
+    if mood == "happy":
+        return {(9, 9), (10, 9), (11, 9), (9, 10), (10, 10), (11, 10)}
+    return {(10, 9), (11, 9), (11, 10)}
+
+
+def _pixel_badge_mark_cells(mood: str) -> set[tuple[int, int]]:
+    if mood == "alert":
+        return {(11, 9), (11, 10)}
+    if mood == "focused":
+        return {(10, 10), (11, 9)}
+    if mood == "happy":
+        return {(10, 9), (10, 10), (9, 10), (11, 10)}
+    return {(11, 9)}
+
+
+def _pixel_cells_svg(
+    cells: dict[tuple[int, int], str],
+    *,
+    body: str,
+    ink: str,
+    accent: str,
+) -> str:
+    colors = {
+        "body": body,
+        "ink": ink,
+        "accent": accent,
+        "outline": "#17202a",
+    }
+    cell_size = 6
+    offset = 10
+    parts = []
+    for (x, y), token in sorted(cells.items(), key=lambda item: (item[0][1], item[0][0])):
+        parts.append(
+            f'<rect x="{offset + x * cell_size}" y="{offset + y * cell_size}" '
+            f'width="{cell_size}" height="{cell_size}" fill="{colors[token]}"/>'
+        )
+    return "".join(parts)
+
+
 def _html_diagnosis_item(item: dict[str, Any]) -> str:
     signals = [str(signal) for signal in _as_list(item.get("signals"))[:3]]
+    uncertainty = [
+        str(reason) for reason in _as_list(item.get("uncertainty_reasons"))[:3]
+    ]
+    confidence = str(item.get("confidence", "medium"))
+    scenario, issue, next_action = _diagnosis_plain_language(item)
+    mini_pet = _pet_avatar_svg(
+        f"diagnosis:{item.get('title', '')}:{item.get('severity', '')}",
+        mood=_severity_mood(str(item.get("severity", "warning"))),
+        size=54,
+        title="诊断项的 agent 宠物",
+    )
     return (
         '<div class="diagnosis">'
+        f'<div class="mini-pet">{mini_pet}</div>'
         f"<strong>{escape(str(item.get('title', '未命名诊断')))}</strong>"
-        f"{escape(str(item.get('root_cause', '')))}"
+        f'<div class="subtle">置信度：{escape(confidence)}</div>'
+        f"<p><strong>场景：</strong>{escape(scenario)}</p>"
+        f"<p><strong>问题：</strong>{escape(issue)}</p>"
+        f'<div class="next-action">下次可以这样改：{escape(next_action)}</div>'
         f"{_html_signal_list(signals)}"
+        f"{_html_signal_list(uncertainty)}"
         f"{_html_raw_signals(signals)}"
         "</div>"
+    )
+
+
+def _severity_mood(severity: str) -> str:
+    if severity == "critical":
+        return "alert"
+    if severity == "warning":
+        return "focused"
+    if severity == "info":
+        return "happy"
+    return "curious"
+
+
+def _diagnosis_plain_language(item: dict[str, Any]) -> tuple[str, str, str]:
+    title = str(item.get("title", ""))
+    root = str(item.get("root_cause", ""))
+    recommendation = str(item.get("recommendation", ""))
+    if "任务入口目标质量偏弱" in title:
+        return (
+            "你可能只是说“继续”“开做”或贴了一段上下文，AI 需要自己猜这次到底要交付什么。",
+            "目标太短时，AI 会补全隐含需求；补错以后，后面的实现和验证都会跟着偏。",
+            "把入口写成：目标 / 允许范围 / 禁止范围 / 验收命令 / 交付格式。",
+        )
+    if "顶层目标存在但工程闭环缺失" in title:
+        return (
+            "你提出了一个大方向，对话也推进了很久，但没有稳定落到可验证产物。",
+            "这类 episode 看起来很忙，但缺少可恢复的实现、验证或关闭证据。",
+            "超过 50 个事件还没产物时，停下来拆成 1 个可验证子任务。",
+        )
+    if "实现后验证/收束不足" in title:
+        return (
+            "AI 已经做了改动，但收尾时缺少测试、构建、人工检查或 handoff。",
+            "没有收束证据时，你下次回来很难判断任务到底是完成、半成品还是需要重跑。",
+            "把 Definition of Done 写进任务：必须运行哪些命令，报告哪些结果。",
+        )
+    if "高产但高纠缠" in title:
+        return (
+            "你确实产出了很多代码，但每个产出背后需要大量来回解释、纠偏和补救。",
+            "这通常不是能力不足，而是任务切分、边界和验收点没有足够早地固定。",
+            "把一个大任务拆成 30-60 分钟可关闭的小任务，每个任务只允许一个主目标。",
+        )
+    if "数据生命周期" in title:
+        return (
+            "AI 可能把原始素材、临时中间产物和长期资产混在一起处理。",
+            "数据角色不清会导致重复生成、误覆盖和后续无法复现。",
+            "先列三类数据：只读素材、可重建中间产物、必须版本化的永久资产。",
+        )
+    return (
+        root or "这个诊断来自多个结构化信号的交叉判断。",
+        "它提示某类协作成本正在反复出现，需要把隐含习惯改成显式流程。",
+        recommendation or "选一条咨询路线，把它转成下一轮任务模板。",
+    )
+
+
+def _html_signal_profile_risk(signal_profile: dict[str, Any]) -> str:
+    profile_names = [str(item) for item in _as_list(signal_profile.get("profile_names"))]
+    auto_detected = [
+        str(item) for item in _as_list(signal_profile.get("auto_detected_profiles"))
+    ]
+    unknown_keys = [str(item) for item in _as_list(signal_profile.get("unrecognized_keys"))]
+    confidence = str(signal_profile.get("confidence_hint", "low"))
+    source_path = signal_profile.get("source_path")
+    risk_note = (
+        "当前项目有明确 profile 配置，规范识别风险较低。"
+        if source_path
+        else "未发现显式 observer 配置；若项目使用自定义规范，未识别规则可能导致闭环低估。"
+    )
+    if unknown_keys:
+        risk_note = "配置中存在当前版本未识别的键，部分规范信号可能被忽略。"
+
+    rows = [
+        ("诊断置信度", confidence),
+        ("active profiles", ", ".join(profile_names) if profile_names else "generic"),
+        ("auto detected", ", ".join(auto_detected) if auto_detected else "none"),
+        ("unrecognized keys", ", ".join(unknown_keys) if unknown_keys else "none"),
+    ]
+    items = "".join(
+        f"<li><strong>{escape(label)}:</strong> {escape(value)}</li>"
+        for label, value in rows
+    )
+    return (
+        "<h3>诊断置信度与未识别规范风险</h3>"
+        f"<p>{escape(risk_note)}</p>"
+        f'<ul class="signal-list">{items}</ul>'
     )
 
 
@@ -1436,7 +1979,10 @@ def _episode_diagnostic_signal_counts(
     return counts
 
 
-def _episode_summary(episodes: list[EpisodeSummary]) -> dict[str, Any]:
+def _episode_summary(
+    episodes: list[EpisodeSummary],
+    analyzed_total: int | None = None,
+) -> dict[str, Any]:
     loop_counts: dict[str, int] = {}
     goal_quality_counts: dict[str, int] = {}
     goal_extraction_counts: dict[str, int] = {}
@@ -1453,6 +1999,8 @@ def _episode_summary(episodes: list[EpisodeSummary]) -> dict[str, Any]:
         project_counts[ep.project] = project_counts.get(ep.project, 0) + 1
     return {
         "total": len(episodes),
+        "analyzed_total": analyzed_total if analyzed_total is not None else len(episodes),
+        "emitted_total": len(episodes),
         "loop_quality_counts": dict(sorted(loop_counts.items())),
         "goal_quality_counts": dict(sorted(goal_quality_counts.items())),
         "goal_extraction_counts": dict(sorted(goal_extraction_counts.items())),
@@ -1476,7 +2024,10 @@ def _goal_quality_rank(ep: EpisodeSummary) -> int:
     }.get(ep.goal_quality, 0)
 
 
-def _effective_activation_signatures(report: Report) -> list[dict[str, Any]]:
+def _effective_activation_signatures(
+    report: Report,
+    episodes: list[EpisodeSummary] | None = None,
+) -> list[dict[str, Any]]:
     act_labels = [
         "act-first-principle",
         "act-scale-stress",
@@ -1488,4 +2039,11 @@ def _effective_activation_signatures(report: Report) -> list[dict[str, Any]]:
         cnt = report.label_count(lbl)
         if cnt > 0:
             signatures.append({"activation": lbl, "count": cnt})
+    design_closed = sum(1 for ep in episodes or [] if ep.loop_quality == "design_closed")
+    if design_closed:
+        signatures.append({
+            "activation": "act-design-closure",
+            "count": design_closed,
+            "source": "episode_loop_quality",
+        })
     return sorted(signatures, key=lambda x: -x["count"])

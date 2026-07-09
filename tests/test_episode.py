@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from observer.episode import EpisodeSegmenter, segment_episodes
+from observer.event_signals import CODE_RAIL_PROFILE, GENERIC_PROFILE
 from observer.ir import IREvent, ToolCall
+
+_CODERAIL_PROFILES = (GENERIC_PROFILE, CODE_RAIL_PROFILE)
 
 
 def _ev(
@@ -41,8 +44,187 @@ def test_single_episode_summarizes_engineering_loop() -> None:
     assert ep.has_implementation
     assert ep.has_verification
     assert ep.is_closed
-    assert ep.loop_quality == "closed_verified"
+    assert ep.loop_quality == "implementation_closed"
     assert ep.constraints == ("请实现导出功能，必须有 pytest 验收",)
+
+
+def test_codex_apply_patch_shell_command_counts_as_implementation() -> None:
+    episodes = segment_episodes([
+        _ev("user", "请修复 parser bug，必须跑 pytest"),
+        _ev(
+            "assistant",
+            tool_calls=(
+                ToolCall(
+                    name="exec_command",
+                    input={"cmd": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Update File: parser.py\nPATCH"},
+                ),
+            ),
+        ),
+        _ev(
+            "assistant",
+            tool_calls=(ToolCall(name="exec_command", input={"cmd": "uv run pytest"}),),
+        ),
+        _ev("assistant", "完成，All checks passed"),
+    ])
+
+    ep = episodes[0]
+    assert ep.implementation_count == 1
+    assert ep.verification_count >= 1
+    assert ep.loop_quality == "implementation_closed"
+
+
+def test_shell_verify_commands_include_static_checks_and_git_diff_check() -> None:
+    episodes = segment_episodes([
+        _ev("user", "请检查发布前质量"),
+        _ev(
+            "assistant",
+            tool_calls=(
+                ToolCall(
+                    name="exec_command",
+                    input={"cmd": "uv run ruff check . && uv run mypy . && git diff --check"},
+                ),
+            ),
+        ),
+    ])
+
+    ep = episodes[0]
+    assert ep.verification_count == 1
+    assert ep.loop_quality == "verification_only"
+
+
+def test_coderail_done_gate_trace_index_and_commit_close_loop() -> None:
+    episodes = segment_episodes(
+        [
+            _ev("user", "按 CodeRail 任务完成 T-012，更新 trace 并 closeout"),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={
+                            "cmd": "python scripts/trace_event.py --task T-012 --kind verify"
+                        },
+                    ),
+                ),
+            ),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(name="exec_command", input={"cmd": "python scripts/trace_index.py"}),
+                ),
+            ),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={"cmd": "python scripts/done_gate.py --task T-012"},
+                    ),
+                ),
+            ),
+            _ev("user", "Done Gate: pass"),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={
+                            "cmd": "git add docs/TASKS.md docs/TRACELOG.jsonl && git commit -m 'Close T-012'"
+                        },
+                    ),
+                ),
+            ),
+        ],
+        profiles=_CODERAIL_PROFILES,
+    )
+
+    ep = episodes[0]
+    assert ep.implementation_count >= 1
+    assert ep.governance_signal_count >= 1
+    assert ep.verification_count >= 1
+    assert ep.is_closed
+    assert ep.loop_quality == "design_closed"
+
+
+def test_docs_only_adr_closeout_is_design_closed_not_goal_only() -> None:
+    episodes = segment_episodes(
+        [
+            _ev("user", "请完成 ADR，记录架构决策并更新任务状态"),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={
+                            "cmd": "python - <<'PY'\nfrom pathlib import Path\nPath('docs/DECISIONS.md').write_text('ADR-001')\nPY"
+                        },
+                    ),
+                ),
+            ),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={"cmd": "python scripts/trace_event.py --kind decision"},
+                    ),
+                ),
+            ),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={"cmd": "git add docs/DECISIONS.md && git commit -m 'Record ADR'"},
+                    ),
+                ),
+            ),
+        ],
+        profiles=_CODERAIL_PROFILES,
+    )
+
+    ep = episodes[0]
+    assert ep.implementation_count >= 1
+    assert ep.loop_quality == "design_closed"
+
+
+def test_blocked_or_handoff_episode_is_not_goal_only() -> None:
+    episodes = segment_episodes([
+        _ev("user", "请推进 T-020，如果阻塞就写 handoff"),
+        _ev(
+            "assistant",
+            "Blocked: 缺少产品决策，已更新 HANDOFF.md，下一步等待确认",
+        ),
+    ])
+
+    ep = episodes[0]
+    assert ep.loop_quality == "blocked_or_handoff"
+
+
+def test_verified_and_closed_governance_loop_is_not_implemented_unverified() -> None:
+    episodes = segment_episodes(
+        [
+            _ev("user", "请按 CodeRail 完成 T-030"),
+            _ev(
+                "assistant",
+                tool_calls=(
+                    ToolCall(
+                        name="exec_command",
+                        input={
+                            "cmd": "python scripts/trace_event.py --task T-030 --kind verify"
+                        },
+                    ),
+                ),
+            ),
+            _ev("assistant", "Done Gate: passed"),
+        ],
+        profiles=_CODERAIL_PROFILES,
+    )
+
+    ep = episodes[0]
+    assert ep.verification_count > 0
+    assert ep.closure_count > 0
+    assert ep.loop_quality == "closed_verified"
 
 
 def test_episode_splits_on_large_time_gap() -> None:
@@ -154,6 +336,7 @@ def test_to_dict_includes_loop_quality() -> None:
     assert data["goal_quality"] == "task_like"
     assert data["normalized_goal"] == "请实现 A"
     assert data["goal_extraction_method"] == "raw_goal"
+    assert data["confidence"] == "medium"
     assert data["diagnostic_signals"] == []
 
 

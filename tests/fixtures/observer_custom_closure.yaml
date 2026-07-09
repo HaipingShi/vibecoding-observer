@@ -1,0 +1,15 @@
+observer:
+  project_type: research_codebase
+  docs_as_artifacts:
+    - planning/accepted-design.md
+  verify_commands:
+    - make evidence-check
+  closure_markers:
+    - RFC accepted
+    - delivery sealed
+  persistence_markers:
+    - changelog updated
+  handoff_markers:
+    - owner handoff
+  generated_ignore:
+    - scratch/**

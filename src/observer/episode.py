@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from observer.event_signals import DEFAULT_PROFILES, SignalProfile, detect_event_signals
 from observer.ir import IREvent
 from observer.message_classifier import MessageKind, classify_message
 
@@ -33,14 +34,6 @@ _CONSTRAINT_RE = re.compile(
 _CORRECTION_RE = re.compile(
     r"不对|错了|不是|方向|重新|换个思路|回退|别这样"
     r"|wrong|incorrect|not what|redo|start over|different approach",
-    re.IGNORECASE,
-)
-_CLOSURE_RE = re.compile(
-    r"完成|搞定|通过|已修复|done|finished|passed|all checks passed",
-    re.IGNORECASE,
-)
-_VERIFY_RE = re.compile(
-    r"pytest|ruff|pyright|uv build|npm test|pnpm test|验证|测试|检查|check|verify|validate",
     re.IGNORECASE,
 )
 _TASK_GOAL_RE = re.compile(
@@ -74,7 +67,6 @@ _TASK_PREFIX_RE = re.compile(
 )
 _SELECTION_HEADING_RE = re.compile(r"^##\s*Selection\s+\d+\s*", re.IGNORECASE)
 
-_IMPLEMENT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "apply_patch"})
 _LONG_EPISODE_EVENTS = 50
 
 
@@ -95,6 +87,11 @@ class EpisodeSummary:
     verification_count: int
     correction_count: int
     closure_count: int
+    code_implementation_count: int = 0
+    docs_implementation_count: int = 0
+    governance_signal_count: int = 0
+    git_closeout_count: int = 0
+    blocked_or_handoff_count: int = 0
 
     @property
     def has_goal(self) -> bool:
@@ -119,11 +116,30 @@ class EpisodeSummary:
     @property
     def loop_quality(self) -> str:
         """Coarse engineering-loop classification for downstream diagnosis."""
-        if self.has_goal and self.has_implementation and self.has_verification and self.is_closed:
+        if (
+            self.blocked_or_handoff_count > 0
+            and self.code_implementation_count == 0
+            and self.git_closeout_count == 0
+        ):
+            return "blocked_or_handoff"
+        if self.code_implementation_count > 0 and self.has_verification and self.is_closed:
+            return "implementation_closed"
+        if (
+            self.docs_implementation_count > 0
+            and (
+                self.is_closed
+                or self.governance_signal_count > 0
+                or self.git_closeout_count > 0
+            )
+        ):
+            return "design_closed"
+        if self.has_verification and self.is_closed:
             return "closed_verified"
-        if self.has_goal and self.has_implementation and self.has_verification:
-            return "verified_unclosed"
-        if self.has_goal and self.has_implementation:
+        if self.has_verification and not self.has_implementation:
+            return "verification_only"
+        if self.code_implementation_count > 0 and self.has_verification:
+            return "implemented_verified_unclosed"
+        if self.has_implementation:
             return "implemented_unverified"
         if self.has_goal:
             return "goal_only"
@@ -149,6 +165,30 @@ class EpisodeSummary:
     def diagnostic_signals(self) -> tuple[str, ...]:
         return _episode_diagnostic_signals(self)
 
+    @property
+    def confidence(self) -> str:
+        """Confidence that the loop-quality label reflects real task state."""
+        if self.loop_quality == "implementation_closed":
+            return "high" if self.has_verification and self.is_closed else "medium"
+        if self.loop_quality == "design_closed":
+            return "high" if self.git_closeout_count > 0 or self.governance_signal_count > 0 else "medium"
+        if self.loop_quality == "closed_verified":
+            return "medium"
+        if self.loop_quality in {"verification_only", "blocked_or_handoff"}:
+            return "medium"
+        if self.loop_quality in {"implemented_unverified", "implemented_verified_unclosed"}:
+            return "medium"
+        if self.loop_quality == "goal_only" and self.event_count >= _LONG_EPISODE_EVENTS:
+            return "high"
+        if self.loop_quality == "goal_only":
+            return "medium"
+        return "low"
+
+    @property
+    def coderail_count(self) -> int:
+        """Deprecated compatibility alias for governance signal count."""
+        return self.governance_signal_count
+
     def to_dict(self) -> dict[str, object]:
         return {
             "project": self.project,
@@ -164,11 +204,17 @@ class EpisodeSummary:
             "verification_count": self.verification_count,
             "correction_count": self.correction_count,
             "closure_count": self.closure_count,
+            "code_implementation_count": self.code_implementation_count,
+            "docs_implementation_count": self.docs_implementation_count,
+            "governance_signal_count": self.governance_signal_count,
+            "git_closeout_count": self.git_closeout_count,
+            "blocked_or_handoff_count": self.blocked_or_handoff_count,
             "loop_quality": self.loop_quality,
             "goal_quality": self.goal_quality,
             "goal_quality_reasons": list(self.goal_quality_reasons),
             "normalized_goal": self.normalized_goal,
             "goal_extraction_method": self.goal_extraction_method,
+            "confidence": self.confidence,
             "diagnostic_signals": list(self.diagnostic_signals),
         }
 
@@ -176,8 +222,13 @@ class EpisodeSummary:
 class EpisodeSegmenter:
     """Split ordered project events into task-level episodes."""
 
-    def __init__(self, max_gap_seconds: int = _DEFAULT_MAX_GAP_SECONDS) -> None:
+    def __init__(
+        self,
+        max_gap_seconds: int = _DEFAULT_MAX_GAP_SECONDS,
+        profiles: Iterable[SignalProfile] = DEFAULT_PROFILES,
+    ) -> None:
         self.max_gap_seconds = max_gap_seconds
+        self.profiles = tuple(profiles)
 
     def segment(self, events: Iterable[IREvent]) -> list[EpisodeSummary]:
         evs = list(events)
@@ -207,26 +258,35 @@ class EpisodeSegmenter:
                 previous_closed = False
 
             current.append(ev)
-            if _is_closure(ev):
+            if _can_close_episode_boundary(ev, self.profiles):
                 previous_closed = True
             previous = ev
 
         if current:
             groups.append((current_start, current))
 
-        summaries = [_summarize_episode(start_idx, group) for start_idx, group in groups if group]
+        summaries = [
+            _summarize_episode(start_idx, group, self.profiles)
+            for start_idx, group in groups
+            if group
+        ]
         return [summary for summary in summaries if _has_episode_signal(summary)]
 
 
 def segment_episodes(
     events: Iterable[IREvent],
     max_gap_seconds: int = _DEFAULT_MAX_GAP_SECONDS,
+    profiles: Iterable[SignalProfile] = DEFAULT_PROFILES,
 ) -> list[EpisodeSummary]:
     """One-shot episode segmentation."""
-    return EpisodeSegmenter(max_gap_seconds=max_gap_seconds).segment(events)
+    return EpisodeSegmenter(max_gap_seconds=max_gap_seconds, profiles=profiles).segment(events)
 
 
-def _summarize_episode(start_idx: int, events: list[IREvent]) -> EpisodeSummary:
+def _summarize_episode(
+    start_idx: int,
+    events: list[IREvent],
+    profiles: tuple[SignalProfile, ...],
+) -> EpisodeSummary:
     first = events[0]
     last = events[-1]
     constraints: list[str] = []
@@ -235,6 +295,11 @@ def _summarize_episode(start_idx: int, events: list[IREvent]) -> EpisodeSummary:
     verification = 0
     correction = 0
     closure = 0
+    code_implementation = 0
+    docs_implementation = 0
+    governance_signals = 0
+    git_closeout = 0
+    blocked_or_handoff = 0
 
     for ev in events:
         if _is_human_instruction(ev):
@@ -245,11 +310,22 @@ def _summarize_episode(start_idx: int, events: list[IREvent]) -> EpisodeSummary:
             if _CORRECTION_RE.search(ev.text):
                 correction += 1
 
-        if _has_implementation(ev):
+        signals = detect_event_signals(ev, profiles=profiles)
+        if signals.implementation:
             implementation += 1
-        if _has_verification(ev):
+        if signals.code_edit:
+            code_implementation += 1
+        if signals.design_artifact:
+            docs_implementation += 1
+        if signals.governance:
+            governance_signals += 1
+        if signals.persistence:
+            git_closeout += 1
+        if signals.handoff:
+            blocked_or_handoff += 1
+        if signals.verification:
             verification += 1
-        if _is_closure(ev):
+        if signals.closure:
             closure += 1
 
     return EpisodeSummary(
@@ -266,6 +342,11 @@ def _summarize_episode(start_idx: int, events: list[IREvent]) -> EpisodeSummary:
         verification_count=verification,
         correction_count=correction,
         closure_count=closure,
+        code_implementation_count=code_implementation,
+        docs_implementation_count=docs_implementation,
+        governance_signal_count=governance_signals,
+        git_closeout_count=git_closeout,
+        blocked_or_handoff_count=blocked_or_handoff,
     )
 
 
@@ -277,38 +358,21 @@ def _starts_new_goal(text: str) -> bool:
     return bool(_NEW_GOAL_RE.search(text.strip()))
 
 
-def _has_implementation(event: IREvent) -> bool:
-    for tc in event.tool_calls:
-        if tc.name in _IMPLEMENT_TOOLS:
-            return True
-        raw_command = str(tc.input.get("command", "") or tc.input.get("cmd", ""))
-        if "apply_patch" in raw_command:
-            return True
-    return False
+def _can_close_episode_boundary(
+    event: IREvent,
+    profiles: tuple[SignalProfile, ...],
+) -> bool:
+    """Only conversational completion claims should split the next user task.
 
-
-def _has_verification(event: IREvent) -> bool:
-    if _text_can_signal_progress(event) and event.text and _VERIFY_RE.search(event.text):
-        return True
-    for tc in event.tool_calls:
-        raw = " ".join(str(v) for v in tc.input.values())
-        if _VERIFY_RE.search(f"{tc.name} {raw}"):
-            return True
-    return False
-
-
-def _is_closure(event: IREvent) -> bool:
+    Tool-level closeout signals such as done_gate.py and trace_index.py are
+    evidence inside the current task; otherwise the following commit or handoff
+    update can be orphaned into a separate episode.
+    """
     return bool(
-        _text_can_signal_progress(event)
+        event.role == "assistant"
         and event.text
-        and _CLOSURE_RE.search(event.text)
+        and detect_event_signals(event, profiles=profiles).closure
     )
-
-
-def _text_can_signal_progress(event: IREvent) -> bool:
-    if event.role != "user":
-        return True
-    return _is_human_instruction(event)
 
 
 def _has_episode_signal(summary: EpisodeSummary) -> bool:
@@ -395,12 +459,12 @@ def _episode_diagnostic_signals(ep: EpisodeSummary) -> tuple[str, ...]:
         signals.append("implementation_without_verification")
     if ep.has_implementation and ep.has_verification and not ep.is_closed:
         signals.append("verified_but_unclosed")
-    if ep.has_goal and not ep.has_implementation and ep.event_count >= _LONG_EPISODE_EVENTS:
+    if ep.loop_quality == "goal_only" and ep.event_count >= _LONG_EPISODE_EVENTS:
         signals.append("long_goal_only_episode")
     if (
         ep.goal_quality == "task_like"
         and ep.has_goal
-        and not ep.has_implementation
+        and ep.loop_quality == "goal_only"
         and ep.event_count >= _LONG_EPISODE_EVENTS
     ):
         signals.append("top_level_goal_without_engineering_loop")

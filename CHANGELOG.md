@@ -13,16 +13,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Repository governance files: `CODE_OF_CONDUCT.md`, `SECURITY.md`, and this changelog.
 - Explicit scan scope flags: `--current-project`, `--project /path/to/project`,
   and `--all-history`.
+- Project-level `AGENTS.md` and `docs/RELEASE_CHECKLIST.md` to document agent
+  work rules, privacy boundaries, release checks, and scaffold exclusions.
 
 ### Changed
 
-- Canonical Python import package is now `observer`; `agentlens` remains a
-  compatibility alias.
+- Canonical Python import package is `observer`; the deprecated `agentlens`
+  package and CLI alias are no longer published by this project.
 - Open-source package metadata now includes author, project-specific keywords,
   and GitHub Issues URL.
 - Repository text files are normalized through `.gitattributes`.
 - Non-interactive agent runs now default to the current project instead of all
   discovered AI coding history.
+- Installation docs now point to the GitHub/source install path until a
+  `vibecoding-observer` PyPI release exists, and explicitly warn that the PyPI
+  `agentlens` package is not this project.
+- `.gitignore` and the PR template now explicitly exclude generated reports,
+  local run state, and CodeRail-style scaffold/intermediate artifacts from
+  publication.
 
 ## [0.1.0] - 2026-07-03
 

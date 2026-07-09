@@ -158,7 +158,9 @@ class TestEpisodeDiagnostics:
 
         findings = diagnose(project=None, git=None, report=None, episodes=episodes)
 
-        assert any("顶层目标存在但工程闭环缺失" in f.title for f in findings)
+        finding = next(f for f in findings if "顶层目标存在但工程闭环缺失" in f.title)
+        assert finding.confidence == "high"
+        assert finding.uncertainty_reasons == []
 
     def test_implementation_verification_gap(self) -> None:
         episodes = [
@@ -168,7 +170,9 @@ class TestEpisodeDiagnostics:
 
         findings = diagnose(project=None, git=None, report=None, episodes=episodes)
 
-        assert any("验证/收束不足" in f.title for f in findings)
+        finding = next(f for f in findings if "验证/收束不足" in f.title)
+        assert finding.confidence == "medium"
+        assert "possible_unconfigured_project_profile" in finding.uncertainty_reasons
 
     def test_weak_goal_quality(self) -> None:
         episodes = [_episode(goal="开做", events=1) for _ in range(25)]

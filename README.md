@@ -76,9 +76,11 @@ output and do the higher-level interpretation.
 
 ## Install
 
-```bash
-pip install vibecoding-observer
-```
+The canonical CLI is `vibecoding-observer` and the canonical Python import
+package is `observer`.
+
+As of 2026-07-09, `vibecoding-observer` is not available from PyPI yet. Do not
+install the PyPI package named `agentlens`; it is not this project.
 
 From source:
 
@@ -86,6 +88,13 @@ From source:
 git clone https://github.com/HaipingShi/vibecoding-observer.git
 cd vibecoding-observer
 uv sync --extra dev
+uv run vibecoding-observer --version
+```
+
+Run commands from the source checkout with `uv run`:
+
+```bash
+uv run vibecoding-observer --current-project --source all --output ./my-report
 ```
 
 ## Usage
@@ -120,6 +129,40 @@ Need custom paths:
 vibecoding-observer --current-project --source claude --claude-dir /custom/claude/projects --output ./my-report
 vibecoding-observer --current-project --source codex --codex-dir /custom/codex/sessions --output ./my-report
 ```
+
+### Project Signal Profile
+
+The analyzer first normalizes generic engineering events, then applies optional
+project profiles. Without a config file it uses the generic profile and may
+auto-enable the CodeRail profile when CodeRail markers are present.
+
+Add `observer.yaml` to a project when your team records closure in custom files
+or commands:
+
+```yaml
+observer:
+  governance_profile: coderail
+  docs_as_artifacts:
+    - docs/TASKS.md
+    - docs/DECISIONS.md
+    - docs/HANDOFF.md
+  verify_commands:
+    - pytest
+    - npm test
+    - done_gate.py
+  closure_markers:
+    - git commit
+    - PR opened
+    - closeout
+  generated_ignore:
+    - data/evaluation/**
+    - .venv/**
+```
+
+Diagnostics include confidence. If the active profile cannot recognize a
+project's implementation, verification, or closure dialect, the report should
+say "not recognized under the current profile" instead of making an absolute
+claim that the engineering loop is missing.
 
 ### Agent Bootstrap Prompt
 
@@ -211,20 +254,20 @@ unless you explicitly choose to share them.
 ```text
 vibecoding-observer/
 ├── src/observer/       # canonical implementation package
-├── src/agentlens/      # compatibility alias for older imports
 ├── tests/              # pytest suite
 ├── docs/               # profile contract and consulting output examples
 ├── scripts/            # e2e helper
 └── assets/             # README visual assets
 ```
 
-New code should import `observer`. The old `agentlens` import package and CLI
-alias remain for compatibility.
+New code should import `observer`. The old `agentlens` name is deprecated and
+is not a supported install package or CLI for this project.
 
 ## Documentation
 
 - [Profile contract](docs/PROFILE_CONTRACT.md)
 - [Consulting output examples](docs/CONSULTING_OUTPUT_EXAMPLES.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License
@@ -289,9 +332,10 @@ report.html + report.md + .analysis-profile.json
 
 ## 安装
 
-```bash
-pip install vibecoding-observer
-```
+标准 CLI 是 `vibecoding-observer`，标准 Python import package 是 `observer`。
+
+截至 2026-07-09，`vibecoding-observer` 还没有发布到 PyPI。不要安装 PyPI 上名为
+`agentlens` 的包；它不是这个项目。
 
 从源码安装：
 
@@ -299,6 +343,13 @@ pip install vibecoding-observer
 git clone https://github.com/HaipingShi/vibecoding-observer.git
 cd vibecoding-observer
 uv sync --extra dev
+uv run vibecoding-observer --version
+```
+
+在源码目录中用 `uv run` 执行命令：
+
+```bash
+uv run vibecoding-observer --current-project --source all --output ./my-report
 ```
 
 ## 使用
@@ -332,6 +383,35 @@ vibecoding-observer --all-history --source all --output ./my-report
 vibecoding-observer --current-project --source claude --claude-dir /custom/claude/projects --output ./my-report
 vibecoding-observer --current-project --source codex --codex-dir /custom/codex/sessions --output ./my-report
 ```
+
+### 项目信号 profile
+
+observer 先识别通用工程事件，再应用可选的项目 profile。没有配置文件时默认使用
+generic profile；如果项目中存在 CodeRail 标记，会自动启用 CodeRail profile。
+
+如果团队把闭环写在自定义文件或命令里，可以在项目根目录添加 `observer.yaml`：
+
+```yaml
+observer:
+  governance_profile: coderail
+  docs_as_artifacts:
+    - docs/TASKS.md
+    - docs/DECISIONS.md
+    - docs/HANDOFF.md
+  verify_commands:
+    - pytest
+    - npm test
+    - done_gate.py
+  closure_markers:
+    - git commit
+    - PR opened
+    - closeout
+  generated_ignore:
+    - data/evaluation/**
+    - .venv/**
+```
+
+诊断会带置信度。如果当前 profile 没有识别到某个项目的实现、验证或收束方言，报告应表达为“当前 profile 下未识别到”，而不是绝对判定工程闭环缺失。
 
 ### 给 agent 的自举 prompt
 
@@ -410,19 +490,19 @@ VibeCoding Observer 刻意保持小而清晰。
 ```text
 vibecoding-observer/
 ├── src/observer/       # canonical implementation package
-├── src/agentlens/      # compatibility alias for older imports
 ├── tests/              # pytest suite
 ├── docs/               # Profile 契约和咨询产物示例
 ├── scripts/            # e2e 辅助脚本
 └── assets/             # README 视觉资产
 ```
 
-新代码应导入 `observer`。旧的 `agentlens` import package 和 CLI alias 仍保留兼容。
+新代码应导入 `observer`。旧的 `agentlens` 名称已经废弃，不再作为本项目的安装包或 CLI。
 
 ## 文档
 
 - [Profile 契约](docs/PROFILE_CONTRACT.md)
 - [咨询产物示例](docs/CONSULTING_OUTPUT_EXAMPLES.md)
+- [发布检查清单](docs/RELEASE_CHECKLIST.md)
 - [贡献指南](CONTRIBUTING.md)
 
 交付分层上，`.analysis-profile.json` 是 agent-facing substrate，给 agent 提供运行态的 `state / trace / guide`；`report.html` 和 `report.md` 是 user-facing deliverable，目标是让用户获得可阅读、可理解、可执行的诊断结果。

@@ -171,11 +171,14 @@ class TestGenerateProfile:
             verification_count=1,
             correction_count=0,
             closure_count=1,
+            code_implementation_count=1,
         )
         profile = generate_profile(_make_report(), [], episodes=[episode])
 
         assert profile["episode_summary"]["total"] == 1
-        assert profile["episode_summary"]["loop_quality_counts"] == {"closed_verified": 1}
+        assert profile["episode_summary"]["emitted_total"] == 1
+        assert profile["episode_summary"]["analyzed_total"] == 1
+        assert profile["episode_summary"]["loop_quality_counts"] == {"implementation_closed": 1}
         assert profile["episode_summary"]["goal_quality_counts"] == {"task_like": 1}
         assert profile["episode_summary"]["goal_extraction_counts"] == {"raw_goal": 1}
         assert profile["episode_summary"]["diagnostic_signal_counts"] == {}
@@ -183,7 +186,64 @@ class TestGenerateProfile:
         assert profile["episodes"][0]["goal_quality"] == "task_like"
         assert profile["episodes"][0]["normalized_goal"] == "请实现导出功能"
         assert profile["episodes"][0]["goal_extraction_method"] == "raw_goal"
+        assert profile["episodes"][0]["confidence"] == "high"
+        assert "governance_signal_count" in profile["episodes"][0]
+        assert "coderail_count" not in profile["episodes"][0]
         assert profile["episodes"][0]["diagnostic_signals"] == []
+
+    def test_episode_summary_total_matches_emitted_episode_array_when_capped(self) -> None:
+        episodes = [
+            EpisodeSummary(
+                project="alpha",
+                cwd="/p/alpha",
+                start_ts="2026-06-28T13:00:00Z",
+                end_ts="2026-06-28T13:02:00Z",
+                start_index=idx,
+                end_index=idx,
+                event_count=idx + 1,
+                goal=f"请实现功能 {idx}",
+                constraints=(),
+                implementation_count=0,
+                verification_count=0,
+                correction_count=0,
+                closure_count=0,
+            )
+            for idx in range(61)
+        ]
+
+        profile = generate_profile(_make_report(), [], episodes=episodes)
+
+        assert len(profile["episodes"]) == 50
+        assert profile["episode_summary"]["total"] == len(profile["episodes"])
+        assert profile["episode_summary"]["emitted_total"] == 50
+        assert profile["episode_summary"]["analyzed_total"] == 61
+
+    def test_design_closed_counts_as_activation_efficacy(self) -> None:
+        episode = EpisodeSummary(
+            project="alpha",
+            cwd="/p/alpha",
+            start_ts="2026-06-28T13:00:00Z",
+            end_ts="2026-06-28T13:02:00Z",
+            start_index=0,
+            end_index=3,
+            event_count=4,
+            goal="请完成 ADR",
+            constraints=(),
+            implementation_count=1,
+            verification_count=0,
+            correction_count=0,
+            closure_count=1,
+            docs_implementation_count=1,
+            governance_signal_count=1,
+        )
+
+        profile = generate_profile(_make_report(), [], episodes=[episode])
+
+        assert {
+            "activation": "act-design-closure",
+            "count": 1,
+            "source": "episode_loop_quality",
+        } in profile["effective_activations"]
 
     def test_profile_prioritizes_high_quality_episode_goals(self) -> None:
         weak = EpisodeSummary(
@@ -253,6 +313,36 @@ class TestGenerateProfile:
         assert "验收标准" in routes[0]["consulting_output"]["sections"]
         assert routes[0]["consulting_output"]["starter_questions"]
         assert routes[0]["consulting_output"]["completion_criteria"]
+        assert profile["diagnoses"][0]["confidence"] == "medium"
+        assert profile["diagnoses"][0]["uncertainty_reasons"] == []
+
+    def test_html_report_shows_signal_profile_risk_and_diagnosis_confidence(self) -> None:
+        diagnosis = Diagnosis(
+            title="实现后验证/收束不足",
+            severity="warning",
+            root_cause="当前 profile 下未识别到闭环",
+            recommendation="补 observer.yaml",
+            signals=["implementation_without_verification=12"],
+            confidence="low",
+            uncertainty_reasons=["possible_unconfigured_project_profile"],
+        )
+        profile = generate_profile(
+            _make_report(),
+            [],
+            diagnoses=[diagnosis],
+            signal_config={
+                "profile_names": ["generic"],
+                "confidence_hint": "low",
+                "unrecognized_keys": ["custom_done_marker"],
+                "auto_detected_profiles": [],
+            },
+        )
+
+        html = generate_html_report(profile)
+
+        assert "诊断置信度与未识别规范风险" in html
+        assert "置信度：low" in html
+        assert "custom_done_marker" in html
 
     def test_profile_generates_consulting_routes_from_episode_signals(self) -> None:
         episode = EpisodeSummary(
@@ -374,15 +464,29 @@ class TestGenerateHtmlReport:
 
         assert html.startswith("<!doctype html>")
         assert "VibeCoding Observer 可视化诊断报告" in html
+        assert "代码生成的诊断宠物头像" in html
+        assert "诊断宠物，会根据本次报告的状态换颜色和表情" in html
+        assert '<svg class="pet-svg"' in html
+        assert 'shape-rendering="crispEdges"' in html
+        assert '<rect x="22" y="22" width="6" height="6"' in html
+        assert '<div class="mini-pet">' in html
+        assert "<img" not in html
+        assert ".png" not in html
         assert ".analysis-profile.json" in html
         assert "consulting_routes" in html
-        assert "动态咨询路线" in html
-        assert "协作类型速写" in html
+        assert "你的 vibe coding 协作画像" in html
+        assert "一句话结论" in html
+        assert "你做得好的地方" in html
+        assert "最拖慢你的 3 个问题" in html
+        assert "优先级行动" in html
+        assert "开发者附录：内部标签、置信度和原始信号" in html
+        assert "你是强目标驱动的 AI 协作者" in html
+        assert "你已经能让 AI 产出代码，但主要损耗发生在" in html
+        assert "你会要求 AI 验证结果" in html
+        assert "任务入口太省字" in html
+        assert "请先复述我的目标，再开始做。" in html
+        assert "下一次对话就改" in html
         assert "MBTI" not in html
-        assert "弱目标启动型" in html
-        assert "验收后置型" in html
-        assert "宏大目标滞留型" in html
-        assert "验证激活型" in html
         assert "meme" not in html
         assert "AI 协作能力矩阵" in html
         assert "主动验证" in html

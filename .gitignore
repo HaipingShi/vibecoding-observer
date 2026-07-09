@@ -27,8 +27,17 @@ report.md
 report.html
 report_*.md
 *.analysis-profile.json
-reports/*.html
+reports/
+my-report/
+e2e_output/
+vibecoding_observer_report/
 .publish_private_patterns
+
+# Local agent/governance scratch space. Do not publish scaffolding or run state.
+.agent/
+.coderail/
+coderail-output/
+project-template/
 
 # OS
 .DS_Store

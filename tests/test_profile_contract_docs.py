@@ -39,6 +39,28 @@ def test_profile_contract_links_to_consulting_output_examples() -> None:
     assert "CONSULTING_OUTPUT_EXAMPLES.md" in text
 
 
+def test_release_governance_documents_publication_boundaries() -> None:
+    release = (ROOT / "docs" / "RELEASE_CHECKLIST.md").read_text()
+    agents = (ROOT / "AGENTS.md").read_text()
+    gitignore = (ROOT / ".gitignore").read_text()
+
+    for text in [release, agents]:
+        assert "vibecoding-observer" in text
+        assert "observer" in text
+        assert "agentlens" in text
+        assert ".analysis-profile.json" in text
+
+    for ignored in [
+        ".agent/",
+        ".coderail/",
+        "coderail-output/",
+        "project-template/",
+        "e2e_output/",
+        "my-report/",
+    ]:
+        assert ignored in gitignore
+
+
 def test_readme_documents_diagnostic_consulting_flow() -> None:
     text = (ROOT / "README.md").read_text()
 
@@ -73,6 +95,8 @@ def test_release_facing_docs_use_consistent_terms() -> None:
 
     assert "18 labels" not in docs["README.md"]
     assert "28 labels" in docs["README.md"]
+    assert "PyPI 上名为\n`agentlens` 的包；它不是这个项目" in docs["README.md"]
+    assert "agentlens` name is deprecated" in docs["README.md"]
     assert "consulting_output" in docs["PROFILE_CONTRACT.md"]
     assert "consulting_output" in docs["CONSULTING_OUTPUT_EXAMPLES.md"]
 

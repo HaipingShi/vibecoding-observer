@@ -44,16 +44,11 @@ plan as the user-facing deliverables.
 ### Step 1: Check if VibeCoding Observer is installed
 
 ```bash
-which vibecoding-observer 2>/dev/null || which agentlens 2>/dev/null || pip show vibecoding-observer 2>/dev/null
+which vibecoding-observer 2>/dev/null || python -c "import observer" 2>/dev/null
 ```
 
-If not found, install it:
-
-```bash
-pip install vibecoding-observer
-```
-
-If pip install fails or user prefers source:
+If not found, install it from the project repository. Do not install the PyPI
+package named `agentlens`; it is not this project.
 
 ```bash
 git clone https://github.com/HaipingShi/vibecoding-observer.git /tmp/vibecoding-observer

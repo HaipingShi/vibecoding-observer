@@ -67,6 +67,26 @@ Conditionally present fields:
 | `diagnoses` | array | Cross-diagnostic findings are available. |
 | `episode_summary` | object | Episode summaries were computed. |
 | `episodes` | array | Episode summaries were computed; capped and sorted for consumption. |
+| `signal_profile` | object | Project signal profiles were resolved for the representative project. |
+
+## Signal Profile
+
+`signal_profile` describes which deterministic event-normalization profiles
+were active. The core profile recognizes generic engineering events; additional
+profiles describe project or team dialects.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `source_path` | string/null | Project-local config file such as `observer.yaml`, when present. |
+| `profile_names` | array[string] | Active profile names, for example `generic`, `coderail`, `project_config`. |
+| `custom_rule_keys` | array[string] | Config keys that contributed custom signal rules. |
+| `unrecognized_keys` | array[string] | Config keys ignored by the current parser. |
+| `auto_detected_profiles` | array[string] | Profiles enabled from project markers without explicit config. |
+| `confidence_hint` | string | `low | medium | high` confidence in the active profile fit. |
+
+Supported project-local config files are `observer.yaml`, `.observer.yaml`,
+`observer.json`, and `observer.toml`. The YAML reader intentionally supports
+only simple scalars and lists so the runtime stays dependency-free.
 
 ## Consulting Routes
 
@@ -145,7 +165,9 @@ When present, `episode_summary` contains aggregate task-loop signals:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `total` | number | Total segmented episodes. |
+| `total` | number | Number of episode objects emitted in `episodes`; must equal `episodes.length`. |
+| `analyzed_total` | number | Total segmented episodes before output capping. |
+| `emitted_total` | number | Same count as `total`, kept explicit for consumers that compare capped output. |
 | `loop_quality_counts` | object | Counts by loop quality. |
 | `goal_quality_counts` | object | Counts by goal quality. |
 | `goal_extraction_counts` | object | Counts by goal extraction method. |
@@ -154,3 +176,46 @@ When present, `episode_summary` contains aggregate task-loop signals:
 
 `episodes` preserves capped per-episode detail for deep inspection. It should
 retain both original `goal` and decoded `normalized_goal`.
+
+Each episode also includes `confidence`, a conservative `low | medium | high`
+rating for the loop-quality classification. Low confidence means the current
+profiles may not recognize the project's governance dialect or artifact
+boundaries well enough for a strong judgment.
+
+Per-episode engineering-loop counters include:
+
+| Field | Meaning |
+|---|---|
+| `code_implementation_count` | Code or runner files were edited. |
+| `docs_implementation_count` | Design, ADR, task, handoff, or declared artifact files were written/persisted. |
+| `governance_signal_count` | Project governance profile signals were observed. |
+| `git_closeout_count` | Git or persistence markers were observed. |
+| `blocked_or_handoff_count` | Handoff, blocker, or next-step signals were observed. |
+
+`coderail_count` is deprecated and should not be used in new profile consumers;
+CodeRail is represented through `governance_signal_count` plus active
+`signal_profile.profile_names`.
+
+## Diagnosis Confidence
+
+Each diagnosis object includes:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `confidence` | string | `low | medium | high` confidence in the finding under the active profiles. |
+| `uncertainty_reasons` | array[string] | Conservative caveats such as unconfigured project profile or unrecognized tool events. |
+
+When no implementation signal is found, consumers should phrase the finding as
+"not recognized under the current profile" unless confidence is high.
+
+The HTML report must surface both `confidence` and profile-fit risk so users can
+distinguish "no engineering loop" from "the current profiles did not recognize
+this team's closure dialect."
+
+## Activation Efficacy
+
+`effective_activations` includes label-based activation evidence and episode
+closure evidence. `act-design-closure` is emitted when design, ADR, trace,
+handoff, or governance-oriented tasks reach `design_closed`; this prevents
+architecture/specification work from being treated as passive or ineffective
+just because it is not a code implementation episode.

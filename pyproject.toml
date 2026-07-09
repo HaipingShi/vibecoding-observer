@@ -51,7 +51,6 @@ dev = [
 
 [project.scripts]
 vibecoding-observer = "observer.cli:main"
-agentlens = "observer.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/HaipingShi/vibecoding-observer"
@@ -59,7 +58,7 @@ Repository = "https://github.com/HaipingShi/vibecoding-observer"
 Issues = "https://github.com/HaipingShi/vibecoding-observer/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/observer", "src/agentlens"]
+packages = ["src/observer"]
 
 [tool.ruff]
 src = ["src", "tests"]
