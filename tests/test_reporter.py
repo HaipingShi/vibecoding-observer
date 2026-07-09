@@ -140,7 +140,7 @@ class TestGenerateReport:
 class TestGenerateProfile:
     def test_profile_has_required_keys(self) -> None:
         profile = generate_profile(_make_report(), _make_anomalies())
-        assert profile["version"] == "0.1.0"
+        assert profile["version"] == "0.2.0"
         assert profile["total_events"] == 50
         assert "label_distribution" in profile
         assert "anomalies" in profile

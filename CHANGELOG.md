@@ -7,8 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-09
+
 ### Added
 
+- Developer-language adaptive reports with `--report-language auto|zh|en`.
+- Screenshot-friendly positive share cards in HTML reports.
+- Standalone self-contained SVG share-card export via `--export-share-card` and
+  `--share-card-svg`.
+- Preset playful title pools plus an `llm_title_prompt` field for downstream
+  user-owned agents to rewrite share-card titles without Observer calling an LLM.
+- Project profile support for custom governance dialects through
+  `observer.yaml` fixtures.
+- GitHub Pages demo workflow with a Pages-enabled preflight check.
 - Single-file bilingual README structure for public repository presentation.
 - Repository governance files: `CODE_OF_CONDUCT.md`, `SECURITY.md`, and this changelog.
 - Explicit scan scope flags: `--current-project`, `--project /path/to/project`,
@@ -18,6 +29,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Codex engineering-loop recognition now treats patches, shell verification,
+  commits, handoff updates, and docs/design artifacts as distinct closure
+  evidence instead of collapsing them into `goal_only`.
+- Episode loop quality now separates `goal_only`, `design_closed`,
+  `implementation_closed`, `verification_only`, and `blocked_or_handoff`.
+- Activation efficacy counts design/documentation closures, reducing false
+  negatives for architecture, ADR, and governance-heavy tasks.
+- Reports now include diagnostic confidence and unrecognized-governance risk
+  language to avoid overstating missing closure when the active workflow dialect
+  is unknown.
+- README now includes visual badges, architecture imagery, demo report guidance,
+  and share-card export examples.
 - Canonical Python import package is `observer`; the deprecated `agentlens`
   package and CLI alias are no longer published by this project.
 - Open-source package metadata now includes author, project-specific keywords,
@@ -46,4 +69,5 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Public publishing helper script for clean-tree release publishing.
 
 [Unreleased]: https://github.com/HaipingShi/vibecoding-observer
+[0.2.0]: https://github.com/HaipingShi/vibecoding-observer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HaipingShi/vibecoding-observer

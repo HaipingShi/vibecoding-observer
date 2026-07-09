@@ -287,7 +287,7 @@ def generate_profile(
     """Generate the machine-readable profile for Phase B consumption."""
     language = _report_language(report_language)
     profile: dict[str, Any] = {
-        "version": "0.1.0",
+        "version": "0.2.0",
         "report_language": language,
         "language_detection": language_detection or {"source": "default", "confidence": "low"},
         "total_events": report.total_events,

@@ -12,7 +12,7 @@ Read AI coding session history, measure the gap between an LLM's default
 thinking path and the engineering fast lane, and turn observed drift into an
 actionable diagnostic report.
 
-<img alt="version" src="https://img.shields.io/badge/version-v0.1.0-2EA44F?logo=semver&logoColor=white">
+<img alt="version" src="https://img.shields.io/badge/version-v0.2.0-2EA44F?logo=semver&logoColor=white">
 <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue.svg?logo=opensourceinitiative&logoColor=white"></a>
 <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
 <a href="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/ci.yml"><img alt="tests" src="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/ci.yml/badge.svg"></a>
