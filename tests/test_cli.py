@@ -41,7 +41,7 @@ class TestOrchestrator:
         assert ".analysis-profile.json" in html
         assert "consulting_routes" in html
         profile = json.loads((tmp_path / ".analysis-profile.json").read_text())
-        assert profile["version"] == "0.2.0"
+        assert profile["version"] == "0.2.1"
 
     def test_run_writes_share_card_svg(self, tmp_path: Path) -> None:
         share_card = tmp_path / "share-card.svg"

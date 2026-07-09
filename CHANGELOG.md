@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-09
+
+### Changed
+
+- README installation instructions now use the official PyPI package
+  `vibecoding-observer` as the primary install path.
+- Release documentation keeps the explicit warning that the PyPI package named
+  `agentlens` is not this project.
+
 ## [0.2.0] - 2026-07-09
 
 ### Added
@@ -69,5 +78,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Public publishing helper script for clean-tree release publishing.
 
 [Unreleased]: https://github.com/HaipingShi/vibecoding-observer
+[0.2.1]: https://github.com/HaipingShi/vibecoding-observer/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/HaipingShi/vibecoding-observer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HaipingShi/vibecoding-observer

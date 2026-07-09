@@ -12,7 +12,7 @@ Read AI coding session history, measure the gap between an LLM's default
 thinking path and the engineering fast lane, and turn observed drift into an
 actionable diagnostic report.
 
-<img alt="version" src="https://img.shields.io/badge/version-v0.2.0-2EA44F?logo=semver&logoColor=white">
+<img alt="version" src="https://img.shields.io/badge/version-v0.2.1-2EA44F?logo=semver&logoColor=white">
 <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue.svg?logo=opensourceinitiative&logoColor=white"></a>
 <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
 <a href="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/ci.yml"><img alt="tests" src="https://github.com/HaipingShi/vibecoding-observer/actions/workflows/ci.yml/badge.svg"></a>
@@ -94,11 +94,17 @@ output and do the higher-level interpretation.
 
 ## Install
 
-The canonical CLI is `vibecoding-observer` and the canonical Python import
-package is `observer`.
+The canonical distribution package is `vibecoding-observer`, the canonical CLI
+is `vibecoding-observer`, and the canonical Python import package is
+`observer`. Do not install the PyPI package named `agentlens`; it is not this
+project.
 
-As of 2026-07-09, `vibecoding-observer` is not available from PyPI yet. Do not
-install the PyPI package named `agentlens`; it is not this project.
+From PyPI:
+
+```bash
+python -m pip install vibecoding-observer
+vibecoding-observer --version
+```
 
 From source:
 
@@ -391,10 +397,16 @@ flowchart LR
 
 ## 安装
 
-标准 CLI 是 `vibecoding-observer`，标准 Python import package 是 `observer`。
+标准 distribution package 是 `vibecoding-observer`，标准 CLI 是
+`vibecoding-observer`，标准 Python import package 是 `observer`。不要安装 PyPI
+上名为 `agentlens` 的包；它不是这个项目。
 
-截至 2026-07-09，`vibecoding-observer` 还没有发布到 PyPI。不要安装 PyPI 上名为
-`agentlens` 的包；它不是这个项目。
+从 PyPI 安装：
+
+```bash
+python -m pip install vibecoding-observer
+vibecoding-observer --version
+```
 
 从源码安装：
 

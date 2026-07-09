@@ -104,7 +104,7 @@ def test_release_facing_docs_use_consistent_terms() -> None:
 
     assert "18 labels" not in docs["README.md"]
     assert "28 labels" in docs["README.md"]
-    assert "PyPI 上名为\n`agentlens` 的包；它不是这个项目" in docs["README.md"]
+    assert "不要安装 PyPI\n上名为 `agentlens` 的包；它不是这个项目" in docs["README.md"]
     assert "agentlens` name is deprecated" in docs["README.md"]
     assert "consulting_output" in docs["PROFILE_CONTRACT.md"]
     assert "consulting_output" in docs["CONSULTING_OUTPUT_EXAMPLES.md"]

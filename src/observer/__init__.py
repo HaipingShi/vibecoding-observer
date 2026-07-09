@@ -8,7 +8,7 @@ interaction patterns that activate engineering-grade decomposition.
 
 from observer.ir import IREvent, Role, SourceAgent, ToolCall
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "IREvent",
